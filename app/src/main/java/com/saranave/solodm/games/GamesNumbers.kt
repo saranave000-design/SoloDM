@@ -165,10 +165,11 @@ object GameEquation : Game {
 
         val pad = k.keypad(
             listOf(
-                listOf("1", "2", "3", "4", "5"),
-                listOf("6", "7", "8", "9", "0"),
-                listOf("+", "−", "×", "÷", "="),
-                listOf("⌫", "Invio")
+                listOf("1", "2", "3", "+"),
+                listOf("4", "5", "6", "−"),
+                listOf("7", "8", "9", "×"),
+                listOf("⌫", "0", "=", "÷"),
+                listOf("Invio")
             )
         ) { key ->
             if (done) return@keypad
@@ -220,14 +221,12 @@ private fun quizView(
         q.text = prompt(i)
         input.text = if (cur.isEmpty()) "_" else cur
     }
-    val pad = k.keypad(
-        listOf(listOf("1", "2", "3", "4", "5"), listOf("6", "7", "8", "9", "0"), listOf("⌫", "OK"))
-    ) { key ->
-        if (i >= total) return@keypad
+    val pad = k.phonePad("OK") { key ->
+        if (i >= total) return@phonePad
         when (key) {
             "⌫" -> cur = cur.dropLast(1)
             "OK" -> {
-                if (cur.isEmpty()) return@keypad
+                if (cur.isEmpty()) return@phonePad
                 val a = answer(i)
                 if (cur.toLongOrNull() == a) { right++; msg.text = "✓" } else msg.text = "✗ era $a"
                 cur = ""; i++

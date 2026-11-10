@@ -90,23 +90,37 @@ class Kit(val ctx: Context, val t: GameTheme) {
     fun lp(w: Int = ViewGroup.LayoutParams.WRAP_CONTENT, h: Int = ViewGroup.LayoutParams.WRAP_CONTENT, weight: Float = 0f, margin: Int = 4) =
         LinearLayout.LayoutParams(w, h, weight).apply { setMargins(dpi(margin), dpi(margin), dpi(margin), dpi(margin)) }
 
-    /** Tastierino: righe di tasti uguali. */
+    /**
+     * Tastierino a righe; "" = spazio vuoto (tiene il posto, così i numeri
+     * restano sempre nella stessa posizione).
+     */
     fun keypad(rows: List<List<String>>, onKey: (String) -> Unit): LinearLayout {
         val col = column()
         for (r in rows) {
             val rowL = row()
-            for (k in r) rowL.addView(button(k, 18f) { onKey(k) }, lp(0, dpi(46), 1f, 3))
+            for (k in r) {
+                val v: View = if (k.isEmpty()) View(ctx) else button(k, 22f) { onKey(k) }
+                rowL.addView(v, lp(0, dpi(54), 1f, 4))
+            }
             col.addView(rowL, lp(ViewGroup.LayoutParams.MATCH_PARENT, margin = 0))
         }
         return col
     }
 
+    /** Disposizione del telefono: 1 2 3 / 4 5 6 / 7 8 9, sotto ⌫. */
     fun numberPad(max: Int, onKey: (String) -> Unit): LinearLayout {
-        val nums = (1..max).map { "$it" }
-        val rows = nums.chunked(if (max <= 6) max else 5).toMutableList()
-        rows += listOf("⌫")
+        fun k(n: Int) = if (n <= max) "$n" else ""
+        val rows = mutableListOf(listOf(k(1), k(2), k(3)), listOf(k(4), k(5), k(6)))
+        if (max >= 7) rows += listOf(k(7), k(8), k(9))
+        rows += listOf("", "⌫", "")
         return keypad(rows, onKey)
     }
+
+    /** Tastierino con lo 0 e il tasto di conferma (per i quiz). */
+    fun phonePad(okLabel: String, onKey: (String) -> Unit): LinearLayout = keypad(
+        listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("⌫", "0", okLabel)),
+        onKey
+    )
 }
 
 /**

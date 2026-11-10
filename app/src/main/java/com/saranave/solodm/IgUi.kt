@@ -20,6 +20,13 @@ object IgUi {
 
     // Visualizzatore Storie
     val STORY_VIEWER_PREFIXES = listOf("reel_viewer")
+    // Pannello dei commenti (o altro pannello che sale dal basso)
+    val SHEET_IDS = listOf(
+        "comment_overswipe_dismiss_container", "bottom_sheet_container", "layout_container_bottom_sheet",
+        "bottom_sheet_container_view", "layout_comment_thread_edittext_multiline"
+    )
+    val SHEET_LIST_IDS = listOf("main_list_view", "sticky_header_list", "recycler_view_container_id")
+
     val STORY_PAGER_IDS = listOf("view_pager", "list_view_pager", "reel_viewer_root")
     val STORY_OWNER_IDS = listOf("reel_viewer_title", "reel_viewer_header_title", "reel_viewer_username")
 
@@ -136,6 +143,7 @@ class Snapshot(val screenW: Int, val screenH: Int) {
 
         fun capture(root: AccessibilityNodeInfo, w: Int, h: Int): Snapshot {
             val s = Snapshot(w, h)
+            val descCandidates = ArrayList<Tab>()
             val queue = ArrayDeque<AccessibilityNodeInfo>()
             queue.add(root)
             var visited = 0
@@ -152,19 +160,25 @@ class Snapshot(val screenW: Int, val screenH: Int) {
                         if (r.top > h * 0.6f) s.tabs[key] = Tab(key, n, r, n.isSelected)
                     }
                 }
-                // Ripiego sulle descrizioni per i pulsanti in basso
-                if (r.top > h * 0.8f && r.height() < h * 0.15f && r.width() < w * 0.4f) {
+                // Possibile pulsante della barra in basso riconosciuto dalla descrizione
+                // (si decide alla fine: vale solo se sta DENTRO la barra "tab_bar")
+                if (r.top > h * 0.75f && r.height() < h * 0.15f && r.width() < w * 0.4f) {
                     val desc = n.contentDescription?.toString()
                     if (!desc.isNullOrBlank()) {
-                        IgUi.tabKeyForDesc(desc)?.let { key ->
-                            val old = s.tabs[key]
-                            if (old == null) s.tabs[key] = Tab(key, n, r, n.isSelected)
-                            else if (n.isSelected && !old.selected) s.tabs[key] = Tab(key, old.node, old.bounds, true)
-                        }
+                        IgUi.tabKeyForDesc(desc)?.let { key -> descCandidates += Tab(key, n, r, n.isSelected) }
                     }
                 }
                 for (i in 0 until n.childCount) {
                     n.getChild(i)?.let { queue.add(it) }
+                }
+            }
+            val bar = s.ids["tab_bar"]?.firstOrNull()?.bounds
+            if (bar != null) {
+                for (t in descCandidates) {
+                    if (!bar.contains(t.bounds)) continue
+                    val old = s.tabs[t.key]
+                    if (old == null) s.tabs[t.key] = t
+                    else if (t.selected && !old.selected) s.tabs[t.key] = Tab(t.key, old.node, old.bounds, true)
                 }
             }
             return s

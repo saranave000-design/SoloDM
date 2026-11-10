@@ -69,6 +69,8 @@ class BlockerService : AccessibilityService() {
     private var evalDueAt = 0L
     private var lastChangeAt = 0L
     private var lastScreenKey = ""
+    private var sheetOpen = false
+    private var sheetClosedAt = 0L
     private var lastRecognizedMasks: Map<String, MaskManager.Mask> = emptyMap()
     private var lastKick = 0L
 
@@ -288,6 +290,9 @@ class BlockerService : AccessibilityService() {
             return
         }
         val screen = Classifier.classify(snap)
+        val sheetNow = snap.hasAny(IgUi.SHEET_IDS)
+        if (sheetOpen && !sheetNow) sheetClosedAt = now
+        sheetOpen = sheetNow
 
         trackBase(screen, now)
         current = screen
@@ -405,6 +410,11 @@ class BlockerService : AccessibilityService() {
         val dy = if (Build.VERSION.SDK_INT >= 28) e.scrollDeltaY else 0
         val now = SystemClock.uptimeMillis()
 
+        // Commenti aperti (o appena chiusi): quei movimenti non sono "passare al post dopo"
+        if (current == Screen.POST_LIST || current == Screen.CLIPS_VIEWER || current == Screen.STORY_VIEWER) {
+            if (sheetOpen || now - sheetClosedAt < 700 || insideSheet(src)) return
+        }
+
         when (current) {
             Screen.CLIPS_VIEWER, Screen.STORY_VIEWER -> {
                 val v = viewer ?: return
@@ -454,6 +464,21 @@ class BlockerService : AccessibilityService() {
             }
             else -> {}
         }
+    }
+
+    private fun insideSheet(node: AccessibilityNodeInfo): Boolean {
+        var n: AccessibilityNodeInfo? = node
+        var depth = 0
+        while (n != null && depth < 10) {
+            val id = IgUi.entryName(n)
+            // (attenzione: "bottom_sheet_camera_container" avvolge TUTTO, non va contato)
+            if (id != null && (id in IgUi.SHEET_IDS || id in IgUi.SHEET_LIST_IDS ||
+                    id.startsWith("comment") || id.startsWith("layout_comment"))
+            ) return true
+            n = n.parent
+            depth++
+        }
+        return false
     }
 
     // ------------------------------------------------------------------ maschere
