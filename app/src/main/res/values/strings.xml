@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Solo DM</string>
+    <string name="service_label">Solo DM – blocco Instagram</string>
+    <string name="service_description">Guarda solo la struttura delle schermate di Instagram (gli identificativi dei pulsanti, non i tuoi messaggi) per nascondere Reels, Esplora, feed e storie. Non usa internet e non invia niente.</string>
+</resources>

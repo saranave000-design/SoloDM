@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fumetto di chat semplice, bianco su nero -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,32c-13.3,0 -24,9.4 -24,21c0,6.2 3.1,11.8 8,15.6l-2,9.4l9.6,-5.2c2.6,0.8 5.4,1.2 8.4,1.2c13.3,0 24,-9.4 24,-21S67.3,32 54,32z" />
+    <path
+        android:fillColor="#FF1C1C1E"
+        android:pathData="M42,51h24v4h-24z" />
+</vector>
