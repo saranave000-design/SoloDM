@@ -70,13 +70,24 @@ class MainActivity : Activity() {
         }
 
         setContentView(root)
+
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
     }
 
     override fun onResume() {
         super.onResume()
         val on = isServiceEnabled()
-        status.text = if (on) "✅  Attiva" else "⚠️  Non attiva"
-        enableBtn.text = if (on) "Impostazioni accessibilità" else "Attiva nelle impostazioni"
+        val runningNow = on && isServiceBound()
+        status.text = when {
+            runningNow -> "✅  Attiva e funzionante"
+            on -> "⚠️  Inceppata: spegnila e riaccendila"
+            else -> "⚠️  Non attiva"
+        }
+        enableBtn.text = if (runningNow) "Impostazioni accessibilità" else if (on) "Riavviala nelle impostazioni" else "Attiva nelle impostazioni"
         restrictedHint.visibility = if (on) View.GONE else View.VISIBLE
 
         val pm = getSystemService(POWER_SERVICE) as PowerManager
@@ -91,6 +102,13 @@ class MainActivity : Activity() {
         } else {
             pauseInfo.visibility = View.GONE
         }
+    }
+
+    /** Android elenca qui solo i servizi che stanno davvero girando. */
+    private fun isServiceBound(): Boolean {
+        val am = getSystemService(ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+        return am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            .any { it.resolveInfo?.serviceInfo?.let { si -> si.packageName == packageName && si.name == BlockerService::class.java.name } == true }
     }
 
     private fun isServiceEnabled(): Boolean {

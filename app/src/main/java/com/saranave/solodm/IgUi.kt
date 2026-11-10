@@ -20,10 +20,16 @@ object IgUi {
 
     // Visualizzatore Storie
     val STORY_VIEWER_PREFIXES = listOf("reel_viewer")
+    val STORY_PAGER_IDS = listOf("view_pager", "list_view_pager", "reel_viewer_root")
     val STORY_OWNER_IDS = listOf("reel_viewer_title", "reel_viewer_header_title", "reel_viewer_username")
 
     // Barra delle storie in cima al feed
-    val STORY_TRAY_PREFIXES = listOf("reels_tray", "stories_tray", "reel_tray")
+    val STORY_TRAY_PREFIXES = listOf("reels_tray", "stories_tray", "reel_tray", "overlay_stories_tray")
+
+    // Barre in alto che esistono SOLO in una schermata: riconoscimento immediato
+    // anche quando, all'apertura, nessuna scheda in basso risulta ancora attiva.
+    val FEED_BAR_IDS = listOf("main_feed_action_bar")
+    val SEARCH_BAR_IDS = listOf("explore_action_bar", "explore_action_bar_container")
 
     // Autore del reel aperto: serve a capire se si è passati al successivo
     // (la didascalia no: cambia quando la espandi con "altro")
@@ -44,7 +50,12 @@ object IgUi {
     val SEARCH_USER_PREFIXES = listOf("row_search_user", "search_user_", "row_user_")
 
     val BACK_IDS = listOf("action_bar_button_back", "action_bar_back_button", "back_button")
-    val ACTION_BAR_IDS = listOf("action_bar_container", "action_bar", "action_bar_root", "title_view")
+    // Barra in alto (per sapere dove inizia il contenuto e per campionare il colore).
+    // NIENTE "action_bar_root": è la radice di tutta la schermata.
+    val ACTION_BAR_IDS = listOf(
+        "main_feed_action_bar", "explore_action_bar", "direct_inbox_action_bar",
+        "profile_action_bar", "action_bar_container", "action_bar"
+    )
 
     /** Riconoscimento dei pulsanti della barra in basso. */
     fun tabKeyForId(entry: String): String? = when {
@@ -189,9 +200,10 @@ object Classifier {
         if (s.hasPrefix(IgUi.PROFILE_PREFIXES)) return Screen.PROFILE
 
         // 6) Ricerca / Esplora
-        if (selected == IgUi.TAB_SEARCH) return Screen.SEARCH
+        if (selected == IgUi.TAB_SEARCH || (selected == null && s.hasAny(IgUi.SEARCH_BAR_IDS))) return Screen.SEARCH
 
-        // 7) Feed: serve la scheda Home attiva E contenuti tipici del feed
+        // 7) Feed: barra del feed, oppure scheda Home attiva con contenuti tipici del feed
+        if (!hasBack && (selected == null || selected == IgUi.TAB_FEED) && s.hasAny(IgUi.FEED_BAR_IDS)) return Screen.FEED
         if (selected == IgUi.TAB_FEED && !hasBack && (hasFeedRows || s.hasPrefix(IgUi.STORY_TRAY_PREFIXES))) {
             return Screen.FEED
         }

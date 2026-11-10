@@ -19,11 +19,23 @@ object DiagLog {
 
     private fun file(c: Context) = File(c.filesDir, FILE)
 
-    @Synchronized
+    private val io = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /** Scrittura in sottofondo: non rallenta il blocco. */
     fun add(c: Context, line: String) {
+        val app = c.applicationContext
+        val stamped = "[${fmt.format(Date())}] $line\n"
+        io.execute { write(app, stamped) }
+    }
+
+    /** Scrittura immediata (per gli errori fatali, prima che l'app si chiuda). */
+    fun addSync(c: Context, line: String) = write(c, "[${fmt.format(Date())}] $line\n")
+
+    @Synchronized
+    private fun write(c: Context, stamped: String) {
         try {
             val f = file(c)
-            f.appendText("[${fmt.format(Date())}] $line\n")
+            f.appendText(stamped)
             if (f.length() > MAX_BYTES) {
                 val text = f.readText()
                 f.writeText(text.substring(text.length / 2))

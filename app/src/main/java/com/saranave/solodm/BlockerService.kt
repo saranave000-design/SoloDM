@@ -37,7 +37,10 @@ class BlockerService : AccessibilityService() {
         @Volatile var running = false
             private set
 
-        private const val EVAL_THROTTLE_MS = 80L
+        private const val EVAL_FAST_MS = 60L
+        private const val EVAL_SLOW_MS = 450L
+        private const val STABLE_AFTER_MS = 1200L
+        private const val RESUME_VALID_MS = 20 * 60_000L
         private const val KICK_COOLDOWN_MS = 700L
         private const val VIEWER_GRACE_MS = 700L
         private const val UNKNOWN_STABLE_MS = 800L
@@ -63,6 +66,10 @@ class BlockerService : AccessibilityService() {
     private lateinit var masks: MaskManager
 
     private var evalScheduled = false
+    private var evalDueAt = 0L
+    private var lastChangeAt = 0L
+    private var lastScreenKey = ""
+    private var lastRecognizedMasks: Map<String, MaskManager.Mask> = emptyMap()
     private var lastKick = 0L
 
     private var current = Screen.UNKNOWN
@@ -90,7 +97,11 @@ class BlockerService : AccessibilityService() {
 
     private val evalRunnable = Runnable {
         evalScheduled = false
-        evaluate()
+        try {
+            evaluate()
+        } catch (t: Throwable) {
+            CrashGuard.record(this, "valutazione", t)
+        }
     }
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -100,12 +111,15 @@ class BlockerService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         running = true
+        CrashGuard.install(this)
+        CrashGuard.clearAlert(this)
         masks = MaskManager(this)
         masks.setColor(Prefs.bgColor(this) ?: fallbackColor())
         Prefs.sp(this).registerOnSharedPreferenceChangeListener(prefListener)
         // Prepara in anticipo le finestre della home, invisibili
         val (w, h) = screenSize()
         Prefs.loadMemory(this, MODE_HOME, w, h)?.let { masks.prepare(it) }
+        Prefs.loadMemory(this, "resume", w, h)?.let { masks.prepare(it) }
         diag("servizio avviato")
     }
 
@@ -128,7 +142,14 @@ class BlockerService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        event ?: return
+        try {
+            handleEvent(event ?: return)
+        } catch (t: Throwable) {
+            CrashGuard.record(this, "evento", t)
+        }
+    }
+
+    private fun handleEvent(event: AccessibilityEvent) {
         if (!::masks.isInitialized) return
         val pkg = event.packageName?.toString()
 
@@ -138,7 +159,9 @@ class BlockerService : AccessibilityService() {
                 diag("finestra Instagram: ${event.className}")
             }
             if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) onScrolled(event)
-            scheduleEval(EVAL_THROTTLE_MS)
+            val structural = event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            val stable = SystemClock.uptimeMillis() - lastChangeAt > STABLE_AFTER_MS
+            scheduleEval(if (structural || !stable) EVAL_FAST_MS else EVAL_SLOW_MS)
             return
         }
 
@@ -200,9 +223,14 @@ class BlockerService : AccessibilityService() {
         launchRecognized = false
         viewer = null
         val (w, h) = screenSize()
-        val mem = Prefs.loadMemory(this, mode, w, h)
+        // Instagram si riapre dove l'avevi lasciato; se è rimasto chiuso a lungo, dalla home.
+        val leftAgo = System.currentTimeMillis() - Prefs.sp(this).getLong("left_at", 0L)
+        val useResume = leftAgo in 0 until RESUME_VALID_MS
+        val mem = (if (useResume) Prefs.loadMemory(this, "resume", w, h) else null)
+            ?: Prefs.loadMemory(this, MODE_HOME, w, h)
         if (mem != null) masks.apply(mem)
-        diag("apertura $mode ($why): memoria ${if (mem == null) "assente" else mem.keys.sorted().toString()} in ${SystemClock.uptimeMillis() - now} ms")
+        diag("apertura $mode ($why): memoria ${if (useResume) "dove l'avevi lasciato" else "home"} " +
+            "${mem?.keys?.sorted() ?: "assente"} in ${SystemClock.uptimeMillis() - now} ms")
     }
 
     // ------------------------------------------------------------------ valutazione
@@ -211,11 +239,14 @@ class BlockerService : AccessibilityService() {
         if (delay == 0L) {
             handler.removeCallbacks(evalRunnable)
             evalScheduled = false
-            evaluate()
+            evalRunnable.run()
             return
         }
-        if (evalScheduled) return
+        val due = SystemClock.uptimeMillis() + delay
+        if (evalScheduled && evalDueAt <= due) return
+        handler.removeCallbacks(evalRunnable)
         evalScheduled = true
+        evalDueAt = due
         handler.postDelayed(evalRunnable, delay)
     }
 
@@ -280,10 +311,12 @@ class BlockerService : AccessibilityService() {
             lastKnownAt = now
             if (!launchRecognized) {
                 launchRecognized = true
-                Prefs.saveMemory(this, launchMode, w, h, desired)
                 diag("apertura $launchMode: riconosciuta $screen dopo ${now - launchAt} ms")
             }
+            lastRecognizedMasks = desired
             if (screen == Screen.FEED) Prefs.saveMemory(this, MODE_HOME, w, h, desired)
+            val key = screen.name + desired.keys.sorted()
+            if (key != lastScreenKey) { lastScreenKey = key; lastChangeAt = now }
             maybeSampleColor(snap)
         } else if (holding) {
             handler.postDelayed({ scheduleEval(1) }, 200)
@@ -383,7 +416,8 @@ class BlockerService : AccessibilityService() {
                 }
                 val isPager = IgUi.entryName(src)?.let { id ->
                     IgUi.CLIPS_VIEWER_PREFIXES.any { id.startsWith(it) } ||
-                        IgUi.STORY_VIEWER_PREFIXES.any { id.startsWith(it) }
+                        IgUi.STORY_VIEWER_PREFIXES.any { id.startsWith(it) } ||
+                        (current == Screen.STORY_VIEWER && id in IgUi.STORY_PAGER_IDS)
                 } ?: (r.height() > h * 0.75f)
                 if (!isPager) return
                 val moved = kotlin.math.abs(dy) > 40 ||
@@ -564,6 +598,9 @@ class BlockerService : AccessibilityService() {
         masks.hideAll()
         viewer = null
         current = Screen.UNKNOWN
+        val (w, h) = screenSize()
+        Prefs.saveMemory(this, "resume", w, h, lastRecognizedMasks)
+        Prefs.sp(this).edit().putLong("left_at", System.currentTimeMillis()).apply()
     }
 
     private fun isIgVisibleInWindows(): Boolean = try {

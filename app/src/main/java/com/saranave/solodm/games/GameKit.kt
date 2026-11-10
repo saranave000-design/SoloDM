@@ -69,7 +69,13 @@ class Kit(val ctx: Context, val t: GameTheme) {
         }
         tv.setPadding(dpi(10), dpi(8), dpi(10), dpi(8))
         tv.isClickable = true
-        tv.setOnClickListener { onClick() }
+        tv.setOnClickListener {
+            try {
+                onClick()
+            } catch (t: Throwable) {
+                com.saranave.solodm.CrashGuard.record(ctx, "gioco (pulsante)", t)
+            }
+        }
         return tv
     }
 
@@ -143,6 +149,14 @@ class Board(ctx: Context, private val t: GameTheme, val rows: Int, val cols: Int
     }
 
     override fun onDraw(canvas: Canvas) {
+        try {
+            drawAll(canvas)
+        } catch (t: Throwable) {
+            com.saranave.solodm.CrashGuard.record(context, "gioco (disegno)", t)
+        }
+    }
+
+    private fun drawAll(canvas: Canvas) {
         cell = min(width.toFloat() / (cols + extraCols()), maxCellDp * d)
         ox = (width - cell * (cols + extraCols())) / 2f
         oy = d
@@ -251,7 +265,11 @@ class Board(ctx: Context, private val t: GameTheme, val rows: Int, val cols: Int
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (e.action == MotionEvent.ACTION_UP && cell > 0) {
             val c = ((e.x - ox) / cell).toInt(); val r = ((e.y - oy) / cell).toInt()
-            if (e.x >= ox && r in 0 until rows && c in 0 until cols) onTap(r, c)
+            try {
+                if (e.x >= ox && e.y >= oy && r in 0 until rows && c in 0 until cols) onTap(r, c)
+            } catch (t: Throwable) {
+                com.saranave.solodm.CrashGuard.record(context, "gioco (tocco)", t)
+            }
         }
         return true
     }
