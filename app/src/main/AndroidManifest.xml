@@ -27,6 +27,10 @@
             android:name=".AdvancedActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".GamesActivity"
+            android:exported="false" />
+
         <service
             android:name=".BlockerService"
             android:exported="false"

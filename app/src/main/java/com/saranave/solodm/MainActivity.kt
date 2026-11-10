@@ -43,8 +43,8 @@ class MainActivity : Activity() {
         ui.text(c2, "Cosa fa", 17f, bold = true)
         ui.text(
             c2,
-            "🚫  Reels ed Esplora: coperti\n" +
-                "🚫  Feed: si copre appena scorri\n" +
+            "🚫  Reels: coperto\n" +
+                "🧩  Feed ed Esplora: coperti, con un giochino al posto\n" +
                 "🚫  Storie dalla barra in alto: coperte\n" +
                 "👀  Storie dal profilo di una persona: sì, solo le sue\n" +
                 "👀  Reel ricevuti in chat: sì, ma uno solo\n" +
@@ -60,6 +60,10 @@ class MainActivity : Activity() {
         batteryBtn = ui.button(c3, "Escludi dal risparmio batteria", primary = false) { askBattery() }
 
         pauseInfo = ui.text(col, "", 14f, ui.muted)
+
+        ui.button(col, "🧩  Giochini", primary = false) {
+            startActivity(Intent(this, GamesActivity::class.java))
+        }
 
         ui.link(col, "Altro") {
             startActivity(Intent(this, AdvancedActivity::class.java))

@@ -1,82 +1,129 @@
 package com.saranave.solodm
 
 import android.content.Context
-import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Rect
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
-import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
-import android.widget.TextView
+import com.saranave.solodm.games.GamePanel
+import com.saranave.solodm.games.GameTheme
 
 /**
- * Rettangoli coprenti disegnati sopra Instagram. Bloccano anche il tocco:
- * quello che c'è sotto non si vede e non si può premere né scorrere.
+ * Maschere disegnate sopra Instagram, nello stesso colore dello sfondo.
+ * Le finestre restano sempre "montate": quando non servono diventano invisibili
+ * e lasciano passare i tocchi. Accenderle è molto più veloce che crearle da zero.
  */
 class MaskManager(private val ctx: Context) {
+    enum class Kind { PLAIN, GAME }
+
+    class Mask(val rect: Rect, val kind: Kind = Kind.PLAIN)
+
+    private class Slot(val root: FrameLayout, val lp: WindowManager.LayoutParams, var shown: Boolean, val panel: GamePanel?)
+
     private val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-    private val shown = HashMap<String, Pair<View, Rect>>()
+    private val slots = HashMap<String, Slot>()
+    var color: Int = 0xFF000000.toInt()
+        private set
 
-    class Mask(val rect: Rect, val label: String?)
+    fun setColor(c: Int) {
+        if (c == color) return
+        color = c
+        val theme = GameTheme.forBackground(c)
+        for (s in slots.values) {
+            s.root.setBackgroundColor(c)
+            s.panel?.setTheme(theme)
+        }
+    }
 
+    /** Mostra esattamente le maschere indicate; le altre diventano invisibili. */
     fun apply(desired: Map<String, Mask>) {
-        // Togli quelle non più necessarie
-        val toRemove = shown.keys.filter { it !in desired.keys }
-        for (k in toRemove) remove(k)
-        // Aggiungi / sposta le altre
+        for ((key, s) in slots) if (key !in desired && s.shown) hide(s)
         for ((key, m) in desired) {
-            if (m.rect.width() <= 0 || m.rect.height() <= 0) {
-                remove(key); continue
-            }
-            val cur = shown[key]
-            if (cur == null) {
-                val v = makeView(m.label, m.rect)
-                try {
-                    wm.addView(v, params(m.rect))
-                    shown[key] = v to Rect(m.rect)
-                } catch (_: Exception) {
-                }
-            } else if (cur.second != m.rect) {
-                try {
-                    wm.updateViewLayout(cur.first, params(m.rect))
-                    shown[key] = cur.first to Rect(m.rect)
-                } catch (_: Exception) {
-                    remove(key)
-                }
-            }
+            if (m.rect.width() <= 0 || m.rect.height() <= 0) { slots[key]?.let { if (it.shown) hide(it) }; continue }
+            val existing = slots[key]
+            if (existing == null) create(key, m) else show(existing, m.rect)
         }
     }
 
-    fun clear() {
-        for (k in shown.keys.toList()) remove(k)
+    /** Crea in anticipo (invisibili) le finestre che serviranno, così poi basta accenderle. */
+    fun prepare(masks: Map<String, Mask>) {
+        for ((key, m) in masks) {
+            if (key in slots || m.rect.width() <= 0 || m.rect.height() <= 0) continue
+            create(key, m, visible = false)
+        }
     }
 
-    fun isEmpty() = shown.isEmpty()
+    fun hideAll() {
+        for (s in slots.values) if (s.shown) hide(s)
+    }
 
-    private fun remove(key: String) {
-        val v = shown.remove(key)?.first ?: return
-        try {
-            wm.removeView(v)
+    fun visibleKeys(): Set<String> = slots.filterValues { it.shown }.keys
+
+    fun destroy() {
+        for (s in slots.values) try { wm.removeView(s.root) } catch (_: Exception) {}
+        slots.clear()
+    }
+
+    private fun create(key: String, m: Mask, visible: Boolean = true): Slot? {
+        val root = FrameLayout(ctx)
+        root.setBackgroundColor(color)
+        root.isClickable = true
+        var panel: GamePanel? = null
+        if (m.kind == Kind.GAME) {
+            panel = GamePanel(ctx, GameTheme.forBackground(color))
+            root.addView(panel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        }
+        val lp = baseParams(m.rect)
+        if (!visible) {
+            root.visibility = View.INVISIBLE
+            lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        }
+        return try {
+            wm.addView(root, lp)
+            val s = Slot(root, lp, visible, panel)
+            slots[key] = s
+            if (visible) panel?.ensureStarted()
+            s
         } catch (_: Exception) {
+            null
         }
     }
 
-    private fun params(r: Rect): WindowManager.LayoutParams {
+    private fun show(s: Slot, r: Rect) {
+        val lp = s.lp
+        val geometryChanged = lp.x != r.left || lp.y != r.top || lp.width != r.width() || lp.height != r.height()
+        if (s.shown && !geometryChanged) return
+        lp.x = r.left; lp.y = r.top; lp.width = r.width(); lp.height = r.height()
+        lp.flags = lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        s.root.visibility = View.VISIBLE
+        s.shown = true
+        try { wm.updateViewLayout(s.root, lp) } catch (_: Exception) {}
+        s.panel?.ensureStarted()
+    }
+
+    private fun hide(s: Slot) {
+        s.shown = false
+        s.root.visibility = View.INVISIBLE
+        s.lp.flags = s.lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        try { wm.updateViewLayout(s.root, s.lp) } catch (_: Exception) {}
+    }
+
+    private fun baseParams(r: Rect): WindowManager.LayoutParams {
         val lp = WindowManager.LayoutParams(
             r.width(), r.height(),
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
+            PixelFormat.OPAQUE
         )
         lp.gravity = Gravity.TOP or Gravity.START
         lp.x = r.left
         lp.y = r.top
+        lp.windowAnimations = 0
         if (Build.VERSION.SDK_INT >= 28) {
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
@@ -85,29 +132,5 @@ class MaskManager(private val ctx: Context) {
             lp.fitInsetsTypes = 0
         }
         return lp
-    }
-
-    private fun makeView(label: String?, r: Rect): View {
-        val dp = ctx.resources.displayMetrics.density
-        val small = r.height() < 140 * dp
-        val box = FrameLayout(ctx)
-        box.background = GradientDrawable().apply {
-            setColor(Color.parseColor("#FF1C1C1E"))
-            cornerRadius = if (small) 14 * dp else 0f
-        }
-        if (label != null && !small) {
-            val tv = TextView(ctx)
-            tv.text = label
-            tv.setTextColor(Color.parseColor("#FF8E8E93"))
-            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            tv.gravity = Gravity.CENTER
-            box.addView(tv, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
-            ))
-        }
-        // Assorbe i tocchi
-        box.isClickable = true
-        box.setOnTouchListener { _, _ -> true }
-        return box
     }
 }
