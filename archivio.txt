@@ -1,2 +1,3 @@
 # Versioni da ricompilare e pubblicare con il loro numero: "versione commit"
+# (si usa l'ultima riga)
 1.3 35d548329b42887093805fdd906b4153a73fa2ad

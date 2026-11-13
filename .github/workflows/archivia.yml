@@ -43,8 +43,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSIONE }}
-          target_commitish: ${{ env.REF }}
           name: Solo DM ${{ env.VERSIONE }}
-          body: "Versione ${{ env.VERSIONE }}. Per tornare a questa versione: scarica SoloDM-${{ env.VERSIONE }}.apk e installala (se il telefono si lamenta, prima disinstalla la versione più nuova)."
+          body: "Versione ${{ env.VERSIONE }} (compilata dal commit ${{ env.REF }}). Per tornare a questa versione: scarica SoloDM-${{ env.VERSIONE }}.apk e installala (se il telefono si lamenta, prima disinstalla la versione più nuova)."
           files: SoloDM-${{ env.VERSIONE }}.apk
           make_latest: false
