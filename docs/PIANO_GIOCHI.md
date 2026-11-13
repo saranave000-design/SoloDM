@@ -1,5 +1,11 @@
 # Piano: giochini senza ambiguità e senza "vicoli ciechi"
 
+> **Stato (13/11/2026):** ✅ giochini fatti nella **v1.4** (Sudoku, KenKen, Kakuro, Sumplete
+> 5/6/7 più difficile, Sequenze non ambigue; verificati sulla JVM, zero schemi non validi).
+> ✅ Paracadute: versioni numerate (v1.3, v1.4…).
+> ⏳ Da fare, in versioni separate e con interruttori: tutte le modifiche alle maschere
+> della home (lampi, app recenti, fumetto, bollicina, audio, propria storia, notifiche).
+
 *Scritto il 12/11/2026 dopo la segnalazione di Sara: alcuni schemi hanno più soluzioni,
 e a volte non c'è nessun numero certo da inserire (bisogna tirare a indovinare).*
 
