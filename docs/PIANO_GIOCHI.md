@@ -172,9 +172,14 @@ quindi lo "zero assoluto" non è garantibile; l'obiettivo è che nel margine si 
    mentre le schede scorrono.
 
 ## Notifiche di sistema a comparsa coperte dalle maschere (13/11/2026)
-Le finestre TYPE_ACCESSIBILITY_OVERLAY stanno sopra le notifiche a comparsa di Android.
-Soluzione: osservare `windows` (TYPE_WINDOWS_CHANGED, flag retrieveInteractiveWindows già
-attivo) e, quando compare una finestra di sistema (com.android.systemui) nella parte alta dello
-schermo che non è la barra di stato, aggiungere i suoi bordi alle "zone escluse".
-Meccanismo comune a fumetto notifiche, bollicina messaggi e notifiche di sistema:
-le maschere vengono divise in rettangoli che girano attorno alle zone escluse.
+Decisione (proposta di Sara): spostare TUTTE le maschere da TYPE_ACCESSIBILITY_OVERLAY a
+**TYPE_APPLICATION_OVERLAY**, che sta sopra Instagram ma SOTTO notifiche a comparsa,
+barra di stato e tendina → le notifiche di sistema restano visibili senza "buchi".
+- Serve il permesso SYSTEM_ALERT_WINDOW ("Mostra sopra altre app"): pulsante nella
+  schermata principale + stato; su Xiaomi anche "Mostra finestre pop-up in background".
+- Android 12+ blocca i tocchi che attraversano finestre "non attendibili" di altre app:
+  quando una maschera è spenta impostare `alpha = 0` (oltre a FLAG_NOT_TOUCHABLE),
+  così Instagram riceve i tocchi normalmente.
+- Se il permesso manca: ripiego automatico sullo strato di accessibilità attuale.
+- Fumetto notifiche e bollicina messaggi sono DENTRO Instagram → servono comunque i
+  "buchi" (zone escluse) nella maschera del feed.
