@@ -170,3 +170,11 @@ quindi lo "zero assoluto" non è garantibile; l'obiettivo è che nel margine si 
    coprire la parte della scheda corrispondente al feed (rettangolo del feed in scala
    scheda/schermo). Aggiornare a ogni evento di scorrimento; limite noto: piccolo ritardo
    mentre le schede scorrono.
+
+## Notifiche di sistema a comparsa coperte dalle maschere (13/11/2026)
+Le finestre TYPE_ACCESSIBILITY_OVERLAY stanno sopra le notifiche a comparsa di Android.
+Soluzione: osservare `windows` (TYPE_WINDOWS_CHANGED, flag retrieveInteractiveWindows già
+attivo) e, quando compare una finestra di sistema (com.android.systemui) nella parte alta dello
+schermo che non è la barra di stato, aggiungere i suoi bordi alle "zone escluse".
+Meccanismo comune a fumetto notifiche, bollicina messaggi e notifiche di sistema:
+le maschere vengono divise in rettangoli che girano attorno alle zone escluse.
