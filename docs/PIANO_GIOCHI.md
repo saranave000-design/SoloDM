@@ -154,3 +154,15 @@ Per ogni gioco a griglia e per ogni livello, 200 partite generate:
   il visualizzatore storie aperto dalla home è permesso finché è visibile
   `self_reel_item_toolbar_container` (pulsanti presenti solo sulle proprie storie);
   quando sparisce per > 400 ms → indietro.
+
+## Lampi dei primi post sulla home (13/11/2026)
+Limite onesto: gli eventi di accessibilità arrivano DOPO che Instagram ha disegnato,
+quindi lo "zero assoluto" non è garantibile; l'obiettivo è che nel margine si veda lo sfondo.
+1. **Copertura prudente**: nelle situazioni incerte (UNKNOWN, transizioni, apertura, indietro)
+   la maschera della home resta/va accesa; si toglie solo quando si è certi che NON è il feed.
+2. **Controllo lampo**: a ogni evento di Instagram (anche cambio contenuto), prima della lettura
+   completa, `findAccessibilityNodeInfosByViewId(".../main_feed_action_bar")` (ricerca mirata,
+   velocissima). Se visibile → maschera del feed dalla memoria, subito.
+3. **Tocco sulla casetta** (TYPE_VIEW_CLICKED su `feed_tab`) → maschera accesa già al tocco.
+4. **App recenti**: l'anteprima di Instagram non include la maschera → consiglio a Sara:
+   Xiaomi → Schermata Home → "Sfoca anteprime app" → Instagram.
