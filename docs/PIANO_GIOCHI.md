@@ -164,5 +164,9 @@ quindi lo "zero assoluto" non è garantibile; l'obiettivo è che nel margine si 
    completa, `findAccessibilityNodeInfosByViewId(".../main_feed_action_bar")` (ricerca mirata,
    velocissima). Se visibile → maschera del feed dalla memoria, subito.
 3. **Tocco sulla casetta** (TYPE_VIEW_CLICKED su `feed_tab`) → maschera accesa già al tocco.
-4. **App recenti**: l'anteprima di Instagram non include la maschera → consiglio a Sara:
-   Xiaomi → Schermata Home → "Sfoca anteprime app" → Instagram.
+4. **App recenti** (scelta di Sara: opzione A, niente sfocatura, niente "casetta → chat"):
+   quando si aprono le recenti (launcher Xiaomi), trovare la scheda di Instagram tramite
+   accessibilità (descrizione "Instagram") e, se l'ultima schermata lasciata era il FEED,
+   coprire la parte della scheda corrispondente al feed (rettangolo del feed in scala
+   scheda/schermo). Aggiornare a ogni evento di scorrimento; limite noto: piccolo ritardo
+   mentre le schede scorrono.
