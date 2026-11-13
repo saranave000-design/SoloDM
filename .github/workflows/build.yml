@@ -30,7 +30,11 @@ jobs:
           ./gradlew --no-daemon assembleDebug
 
       - name: Rinomina APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk SoloDM.apk
+        run: |
+          VER=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "VER=$VER" >> $GITHUB_ENV
+          cp app/build/outputs/apk/debug/app-debug.apk SoloDM.apk
+          cp app/build/outputs/apk/debug/app-debug.apk SoloDM-$VER.apk
 
       - uses: actions/upload-artifact@v4
         with:
@@ -47,4 +51,15 @@ jobs:
           body: "Versione compilata dal commit ${{ github.sha }}. Scarica SoloDM.apk e installalo sopra la versione precedente."
           files: SoloDM.apk
           make_latest: true
+          prerelease: false
+
+      # Paracadute: ogni versione resta scaricabile con il suo numero
+      - name: Pubblica versione numerata
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VER }}
+          name: Solo DM ${{ env.VER }}
+          body: "Versione ${{ env.VER }}. Per tornare a questa versione: scarica SoloDM-${{ env.VER }}.apk e installala (se il telefono si lamenta, prima disinstalla la versione più nuova)."
+          files: SoloDM-${{ env.VER }}.apk
+          make_latest: false
           prerelease: false

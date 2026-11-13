@@ -203,6 +203,23 @@ object Equation {
 class SumpleteP(val n: Int, val grid: Array<IntArray>, val rowSums: IntArray, val colSums: IntArray)
 
 object Sumplete {
+    /** level 0..2 → 5×5, 6×6, 7×7; più il livello è alto, più giri di ragionamento servono. */
+    fun generateLevel(level: Int, rnd: Random): SumpleteP {
+        val n = 5 + level
+        val minRounds = when (level) { 0 -> 2; 1 -> 3; else -> 4 }
+        val deadline = System.nanoTime() + 1_500_000_000L
+        var best: SumpleteP? = null
+        var bestRounds = 0
+        while (true) {
+            val p = generate(n, rnd)
+            val rounds = SumpleteLogic.solve(p)
+            if (rounds < 0) continue
+            if (rounds >= minRounds) return p
+            if (rounds > bestRounds) { best = p; bestRounds = rounds }
+            if (System.nanoTime() > deadline && best != null) return best
+        }
+    }
+
     fun generate(n: Int, rnd: Random): SumpleteP {
         while (true) {
             val g = Array(n) { IntArray(n) { rnd.nextInt(1, 10) } }
@@ -249,7 +266,21 @@ object Latin {
 }
 
 object KenKen {
+    /** Schema a soluzione unica, risolvibile con la logica del livello richiesto. */
     fun generate(n: Int, level: Int, rnd: Random): KenKenP {
+        val deadline = System.nanoTime() + 1_500_000_000L
+        var fallback: KenKenP? = null
+        while (true) {
+            val p = generateRaw(n, level, rnd)
+            val used = KenKenLogic.solve(p, level)
+            if (used < 0) continue
+            if (used == level || level == 0) return p
+            if (fallback == null) fallback = p
+            if (System.nanoTime() > deadline) return fallback
+        }
+    }
+
+    fun generateRaw(n: Int, level: Int, rnd: Random): KenKenP {
         val sol = Latin.generate(n, rnd)
         val owner = Array(n) { IntArray(n) { -1 } }
         val cages = ArrayList<List<Pair<Int, Int>>>()
@@ -349,18 +380,32 @@ object Sudoku {
         val (n, br, bc) = if (level == 0) Triple(6, 2, 3) else Triple(9, 3, 3)
         val full = Array(n) { IntArray(n) }
         fill(full, n, br, bc, rnd)
-        val puzzle = Array(n) { full[it].clone() }
-        val targetGivens = when (level) { 0 -> 14; 1 -> 34; else -> 26 }
-        var givens = n * n
-        for (idx in (0 until n * n).shuffled(rnd)) {
-            if (givens <= targetGivens) break
-            val r = idx / n; val c = idx % n
-            val keep = puzzle[r][c]
-            puzzle[r][c] = 0
-            if (countSolutions(Array(n) { puzzle[it].clone() }, n, br, bc, 2) != 1) puzzle[r][c] = keep
-            else givens--
+        val maxLevel = when (level) { 0 -> 0; 1 -> 1; else -> 2 }
+        val minGivens = when (level) { 0 -> 12; 1 -> 26; else -> 22 }
+        val deadline = System.nanoTime() + 1_500_000_000L
+        var fallback: SudokuP? = null
+        while (true) {
+            val puzzle = Array(n) { full[it].clone() }
+            var givens = n * n
+            for (idx in (0 until n * n).shuffled(rnd)) {
+                if (givens <= minGivens) break
+                val r = idx / n; val c = idx % n
+                val keep = puzzle[r][c]
+                puzzle[r][c] = 0
+                // si toglie solo se resta risolvibile con il ragionamento del livello
+                if (SudokuLogic.solve(puzzle, n, br, bc, maxLevel) < 0) puzzle[r][c] = keep else givens--
+            }
+            val p = SudokuP(n, br, bc, puzzle)
+            val used = SudokuLogic.solve(puzzle, n, br, bc, maxLevel)
+            // Difficile: deve servire davvero almeno una tecnica avanzata
+            if (level < 2 || used >= 1) {
+                if (level < 2 || used == 2 || System.nanoTime() > deadline) return p
+                if (fallback == null) fallback = p
+            }
+            if (System.nanoTime() > deadline) return fallback ?: p
+            for (row in full) java.util.Arrays.fill(row, 0)
+            fill(full, n, br, bc, rnd)
         }
-        return SudokuP(n, br, bc, puzzle)
     }
 
     private fun ok(g: Array<IntArray>, n: Int, br: Int, bc: Int, r: Int, c: Int, v: Int): Boolean {
@@ -420,13 +465,47 @@ class KakuroP(
 )
 
 object Kakuro {
+    /**
+     * Schema a soluzione unica e risolvibile per deduzione.
+     * Metodo: griglia con gruppi corti → riempimento → se il ragionamento si blocca,
+     * si cambia la cifra di una casella ancora incerta e si ricalcolano le somme ("riparazione").
+     */
     fun generate(level: Int, rnd: Random): KakuroP {
+        val deadline = System.nanoTime() + 2_500_000_000L
+        while (true) {
+            val (size, white) = layout(level, rnd)
+            val sol = Array(size) { IntArray(size) }
+            val cells = (1 until size).flatMap { r -> (1 until size).filter { white[r][it] }.map { r to it } }
+            if (!fill(sol, white, cells, 0, size, rnd)) continue
+            repeat(80) {
+                val p = build(size, white, sol)
+                val cand = KakuroLogic.propagate(p) ?: return@repeat
+                val open = cells.filter { (r, c) -> !KakuroLogic.isSingle(cand[r][c]) }
+                if (open.isEmpty()) return p
+                // ripara: cambia una cifra in una casella incerta, senza ripetizioni nei suoi gruppi
+                val (r, c) = open[rnd.nextInt(open.size)]
+                val options = (1..9).filter { v -> v != sol[r][c] && !usedInRun(sol, white, r, c, v, size) }
+                if (options.isNotEmpty()) sol[r][c] = options[rnd.nextInt(options.size)]
+            }
+            if (System.nanoTime() > deadline && level > 0) return generate(level - 1, rnd)
+        }
+    }
+
+    /** Griglia con caselle nere: gruppi lunghi al massimo maxRun, nessun gruppo da 1. */
+    private fun layout(level: Int, rnd: Random): Pair<Int, Array<BooleanArray>> {
         val inner = when (level) { 0 -> 4; 1 -> 5; else -> 6 }
-        val density = when (level) { 0 -> 0; 1 -> 12; else -> 18 }
+        val maxRun = when (level) { 0 -> 3; 1 -> 4; else -> 4 }
         val size = inner + 1
         while (true) {
-            val white = Array(size) { r -> BooleanArray(size) { c -> r > 0 && c > 0 && rnd.nextInt(100) >= density } }
-            // niente corse da una sola cella
+            val white = Array(size) { r -> BooleanArray(size) { c -> r > 0 && c > 0 && rnd.nextInt(100) >= 18 } }
+            // spezza i gruppi troppo lunghi
+            for (dir in 0..1) for (line in 1 until size) {
+                var run = 0
+                for (k in 1 until size) {
+                    val (r, c) = if (dir == 0) line to k else k to line
+                    if (white[r][c]) { run++; if (run > maxRun) { white[r][c] = false; run = 0 } } else run = 0
+                }
+            }
             var changed = true
             while (changed) {
                 changed = false
@@ -437,26 +516,26 @@ object Kakuro {
                 }
             }
             val whites = (1 until size).sumOf { r -> (1 until size).count { c -> white[r][c] } }
-            if (whites < inner * inner * 0.6) continue
-            val sol = Array(size) { IntArray(size) }
-            val cells = (1 until size).flatMap { r -> (1 until size).filter { white[r][it] }.map { r to it } }
-            if (!fill(sol, white, cells, 0, size, rnd)) continue
-            val across = Array(size) { IntArray(size) }
-            val down = Array(size) { IntArray(size) }
-            for (r in 0 until size) for (c in 0 until size) if (!white[r][c]) {
-                if (c + 1 < size && white[r][c + 1]) {
-                    var k = c + 1; var s = 0
-                    while (k < size && white[r][k]) { s += sol[r][k]; k++ }
-                    across[r][c] = s
-                }
-                if (r + 1 < size && white[r + 1][c]) {
-                    var k = r + 1; var s = 0
-                    while (k < size && white[k][c]) { s += sol[k][c]; k++ }
-                    down[r][c] = s
-                }
-            }
-            return KakuroP(size, white, across, down, sol)
+            if (whites >= inner * inner * 0.55) return size to white
         }
+    }
+
+    private fun build(size: Int, white: Array<BooleanArray>, sol: Array<IntArray>): KakuroP {
+        val across = Array(size) { IntArray(size) }
+        val down = Array(size) { IntArray(size) }
+        for (r in 0 until size) for (c in 0 until size) if (!white[r][c]) {
+            if (c + 1 < size && white[r][c + 1]) {
+                var k = c + 1; var s = 0
+                while (k < size && white[r][k]) { s += sol[r][k]; k++ }
+                across[r][c] = s
+            }
+            if (r + 1 < size && white[r + 1][c]) {
+                var k = r + 1; var s = 0
+                while (k < size && white[k][c]) { s += sol[k][c]; k++ }
+                down[r][c] = s
+            }
+        }
+        return KakuroP(size, white, across, down, Array(size) { sol[it].clone() })
     }
 
     private fun fill(g: Array<IntArray>, w: Array<BooleanArray>, cells: List<Pair<Int, Int>>, i: Int, size: Int, rnd: Random): Boolean {
@@ -538,9 +617,17 @@ object MentalMath {
 object Sequences {
     /** Restituisce i numeri mostrati e il prossimo da indovinare. */
     fun generate(level: Int, rnd: Random): Pair<List<Long>, Long> {
+        while (true) {
+            val (shown, next) = generateRaw(level, rnd)
+            if (SequenceCheck.unambiguous(shown, next)) return shown to next
+        }
+    }
+
+    fun generateRaw(level: Int, rnd: Random): Pair<List<Long>, Long> {
         val kinds = when (level) { 0 -> 3; 1 -> 6; else -> 9 }
-        val len = 5
-        val seq: List<Long> = when (rnd.nextInt(kinds)) {
+        val kind = rnd.nextInt(kinds)
+        val len = if (kind == 6) 6 else 5
+        val seq: List<Long> = when (kind) {
             0 -> { val a = rnd.nextLong(1, 30); val d = rnd.nextLong(2, 12); List(len + 1) { a + d * it } }
             1 -> { val a = rnd.nextLong(60, 120); val d = rnd.nextLong(3, 11); List(len + 1) { a - d * it } }
             2 -> { val a = rnd.nextLong(1, 5); val q = rnd.nextLong(2, 4); List(len + 1) { var v = a; repeat(it) { v *= q }; v } }

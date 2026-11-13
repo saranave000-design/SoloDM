@@ -8,7 +8,7 @@ import kotlin.random.Random
 
 object GameSumplete : Game {
     override val title = "Sumplete"
-    override fun generate(level: Int, rnd: Random): Any = Sumplete.generate(4 + level, rnd)
+    override fun generate(level: Int, rnd: Random): Any = Sumplete.generateLevel(level, rnd)
 
     override fun build(k: Kit, data: Any, level: Int, onWin: () -> Unit): View {
         val p = data as SumpleteP
