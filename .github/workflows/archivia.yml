@@ -1,15 +1,11 @@
 name: Archivia una versione
 
 # Ricompila una versione passata (dal suo codice) e la pubblica con il suo numero.
+# Si avvia quando cambia archivio.txt (righe: "versione commit").
 on:
-  workflow_dispatch:
-    inputs:
-      ref:
-        description: "Commit o tag da compilare"
-        required: true
-      versione:
-        description: "Numero di versione (es. 1.3)"
-        required: true
+  push:
+    branches: [main]
+    paths: ["archivio.txt"]
 
 permissions:
   contents: write
@@ -19,8 +15,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Leggi l'ultima riga di archivio.txt
+        run: |
+          read VERSIONE REF < <(grep -v '^#' archivio.txt | grep . | tail -1)
+          echo "VERSIONE=$VERSIONE" >> $GITHUB_ENV
+          echo "REF=$REF" >> $GITHUB_ENV
+
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ env.REF }}
 
       - uses: actions/setup-java@v4
         with:
@@ -33,14 +37,14 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
-          cp app/build/outputs/apk/debug/app-debug.apk SoloDM-${{ inputs.versione }}.apk
+          cp app/build/outputs/apk/debug/app-debug.apk SoloDM-${{ env.VERSIONE }}.apk
 
       - name: Pubblica versione numerata
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ inputs.versione }}
-          target_commitish: ${{ inputs.ref }}
-          name: Solo DM ${{ inputs.versione }}
-          body: "Versione ${{ inputs.versione }}. Per tornare a questa versione: scarica SoloDM-${{ inputs.versione }}.apk e installala (se il telefono si lamenta, prima disinstalla la versione più nuova)."
-          files: SoloDM-${{ inputs.versione }}.apk
+          tag_name: v${{ env.VERSIONE }}
+          target_commitish: ${{ env.REF }}
+          name: Solo DM ${{ env.VERSIONE }}
+          body: "Versione ${{ env.VERSIONE }}. Per tornare a questa versione: scarica SoloDM-${{ env.VERSIONE }}.apk e installala (se il telefono si lamenta, prima disinstalla la versione più nuova)."
+          files: SoloDM-${{ env.VERSIONE }}.apk
           make_latest: false
