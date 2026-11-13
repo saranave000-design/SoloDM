@@ -138,11 +138,19 @@ Per ogni gioco a griglia e per ogni livello, 200 partite generate:
 ## Maschere della home
 - **Fumetto notifiche** (id `activity_feed_tooltip`, già visto in diagnosi): quando è visibile,
   la maschera del feed viene divisa in rettangoli che lasciano scoperto solo il fumetto.
-- **Bollicina dei messaggi in arrivo** dentro Instagram: stesso "buco".
-  → serve una diagnosi con un messaggio ricevuto mentre si è sulla home, per avere l'id.
-- **Musica dal feed coperto**: mentre la maschera del feed è attiva, volume dei contenuti
-  (STREAM_MUSIC) a 0; si ripristina il valore originale appena si lascia la home
-  o Instagram. (Approccio usato anche da FeedLock.)
-- **La propria storia nella barra in alto** (facoltativo, per ultimo): lasciare scoperto solo
-  il primo cerchietto; aprendola da lì, chiudere appena il visualizzatore passa a un'altra
-  persona. Solo se il proprietario della storia si riconosce in modo affidabile.
+- **Bollicina dei messaggi in arrivo** dentro Instagram (senza diagnosi): lasciare scoperto
+  qualsiasi elemento piccolo (< 30% dello schermo) sopra la maschera con id che contiene
+  `notification` (escluso il badge fisso), `banner`, `toast`, `tooltip`, `in_app`, `snackbar`.
+  Se non basta, si affina con una diagnosi.
+- **Audio dal feed coperto**: NIENTE volume di sistema (richiesta di Sara).
+  Usare il pulsante audio di Instagram sul video visibile: se la home è coperta e
+  `AudioManager.isMusicActive()` è vero, cliccare il pulsante audio solo se la sua
+  descrizione dice "disattiva/mute" (mai alla cieca, per non riattivarlo).
+  Da verificare: id e descrizione del pulsante (registrare in diagnosi la descrizione
+  dei nodi audio, che non è un dato personale).
+  Trucco manuale nel frattempo: un tocco sull'altoparlante → Instagram lo ricorda.
+- **La propria storia nella barra in alto**: lasciare scoperto solo il cerchietto con
+  `reel_empty_badge` (il "+" della propria storia). Se il tocco (TYPE_VIEW_CLICKED) cade lì,
+  il visualizzatore storie aperto dalla home è permesso finché è visibile
+  `self_reel_item_toolbar_container` (pulsanti presenti solo sulle proprie storie);
+  quando sparisce per > 400 ms → indietro.
