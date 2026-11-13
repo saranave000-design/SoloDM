@@ -124,3 +124,25 @@ Per ogni gioco a griglia e per ogni livello, 200 partite generate:
 - Kakuro, strategie umane usate per generare: https://www.peterfrank.be/puzzles/frmKakuroStrategy.aspx
 - Kakuro, combinazioni uniche: https://www.markhuckvale.com/games/kakuro/
 - Kakuro, risolutore per propagazione + prova di unicità: https://dev.to/sendotltd/solving-kakuro-cross-sums-with-constraint-propagation-sum-combination-domains-fewest-candidate-4mje
+
+---
+
+# Altre richieste (13/11/2026)
+
+## Sumplete più difficile
+- Dimensioni: Facile 5×5, Medio 6×6, **Difficile 7×7** (risolutore: 2⁷ = 128 sottoinsiemi per riga, ok).
+- Nel Difficile tenere solo schemi che richiedono **molti giri** di deduzione riga↔colonna
+  (misurati dal risolutore logico), mai risolvibili guardando una riga sola.
+- Più numeri ripetuti nella stessa riga/colonna → più sottoinsiemi con la stessa somma.
+
+## Maschere della home
+- **Fumetto notifiche** (id `activity_feed_tooltip`, già visto in diagnosi): quando è visibile,
+  la maschera del feed viene divisa in rettangoli che lasciano scoperto solo il fumetto.
+- **Bollicina dei messaggi in arrivo** dentro Instagram: stesso "buco".
+  → serve una diagnosi con un messaggio ricevuto mentre si è sulla home, per avere l'id.
+- **Musica dal feed coperto**: mentre la maschera del feed è attiva, volume dei contenuti
+  (STREAM_MUSIC) a 0; si ripristina il valore originale appena si lascia la home
+  o Instagram. (Approccio usato anche da FeedLock.)
+- **La propria storia nella barra in alto** (facoltativo, per ultimo): lasciare scoperto solo
+  il primo cerchietto; aprendola da lì, chiudere appena il visualizzatore passa a un'altra
+  persona. Solo se il proprietario della storia si riconosce in modo affidabile.
