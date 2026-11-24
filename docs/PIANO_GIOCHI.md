@@ -193,3 +193,16 @@ barra di stato e tendina → le notifiche di sistema restano visibili senza "buc
 - Se il permesso manca: ripiego automatico sullo strato di accessibilità attuale.
 - Fumetto notifiche e bollicina messaggi sono DENTRO Instagram → servono comunque i
   "buchi" (zone escluse) nella maschera del feed.
+
+## Colore delle maschere sbagliato (24/11/2026) — per la prossima versione
+Misurato su uno screenshot di Sara (tema scuro): sfondo Instagram **#0C0F14**, maschera **#13161B**
+(leggermente più chiara) → il colore bloccato nella 1.5 è sbagliato.
+Causa probabile: i punti di campionamento sul bordo della `main_feed_action_bar` cadono su una
+sfumatura diversa dallo sfondo vero. "Ricalcola colore" rifarebbe lo stesso errore.
+Correzione:
+- campionare dove Instagram disegna sicuramente lo sfondo puro: striscia della **barra di stato**
+  (x ≈ 3–8 dp a sinistra, lontano da icone e fotocamera, 2–3 altezze) e striscia **in fondo**
+  sotto la barra dei pulsanti (x ≈ 3 dp); nello screenshot entrambe = #0C0F14;
+- accordo di almeno 4 punti su 5;
+- cambiare le chiavi del colore bloccato (es. suffisso `_v2`) e ignorare `bg_color` salvato,
+  così il colore sbagliato già bloccato viene scartato all'aggiornamento.
