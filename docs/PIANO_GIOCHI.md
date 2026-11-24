@@ -3,8 +3,12 @@
 > **Stato (13/11/2026):** ✅ giochini fatti nella **v1.4** (Sudoku, KenKen, Kakuro, Sumplete
 > 5/6/7 più difficile, Sequenze non ambigue; verificati sulla JVM, zero schemi non validi).
 > ✅ Paracadute: versioni numerate (v1.3, v1.4…).
-> ⏳ Da fare, in versioni separate e con interruttori: tutte le modifiche alle maschere
-> della home (lampi, app recenti, fumetto, bollicina, audio, propria storia, notifiche).
+> ✅ **v1.5** (24/11/2026): giochi nuovi Futoshiki, Hitori, Binario; la partita non si azzera
+> più al cambio colore; colore bloccato (chiaro/scuro) + "Ricalcola colore";
+> interruttore **Anti-lampo** (acceso di serie): copertura all'apertura e al tocco della casetta,
+> controllo rapido con ricerche mirate (scopre subito in chat/profilo), lettura completa su
+> binario separato, maschera sulle app recenti (best effort, da verificare con diagnosi).
+> ⏳ Da fare: fumetto notifiche, bollicina messaggi, audio, propria storia, notifiche di sistema.
 
 *Scritto il 12/11/2026 dopo la segnalazione di Sara: alcuni schemi hanno più soluzioni,
 e a volte non c'è nessun numero certo da inserire (bisogna tirare a indovinare).*

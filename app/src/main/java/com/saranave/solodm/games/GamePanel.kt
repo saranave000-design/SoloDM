@@ -15,7 +15,8 @@ import kotlin.random.Random
 object GameList {
     val all: List<Game> = listOf(
         Game24, GameTarget, GameEquation, GameMental, GameSequences,
-        GameSumplete, GameKenKen, GameSudoku, GameKakuro
+        GameSumplete, GameKenKen, GameSudoku, GameKakuro,
+        GameFutoshiki, GameHitori, GameBinario
     )
 }
 
@@ -57,10 +58,14 @@ class GamePanel(ctx: Context, theme: GameTheme) : FrameLayout(ctx) {
         newGame()
     }
 
+    /**
+     * Cambio di colore: si aggiorna solo l'intestazione. La partita in corso NON si tocca
+     * (prima ricominciava da capo: era un errore); il nuovo colore vale dalla prossima partita.
+     */
     fun setTheme(t: GameTheme) {
         if (t.bg == k.t.bg && t.fg == k.t.fg) return
         k = Kit(context, t)
-        if (started) { renderHeader(); newGame() }
+        if (started) renderHeader()
     }
 
     private fun save() {

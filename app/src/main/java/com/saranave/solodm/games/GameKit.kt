@@ -137,6 +137,9 @@ class Board(ctx: Context, private val t: GameTheme, val rows: Int, val cols: Int
     /** Per il Kakuro: (indizio in basso, indizio a destra) nelle caselle nere. */
     var split: (Int, Int) -> Pair<Int, Int>? = { _, _ -> null }
     var thickRight: (Int, Int) -> Boolean = { _, _ -> false }
+    /** Segni sui bordi (Futoshiki): tra (r,c) e la casella a destra / sotto. */
+    var rightSign: (Int, Int) -> String? = { _, _ -> null }
+    var bottomSign: (Int, Int) -> String? = { _, _ -> null }
     var thickBottom: (Int, Int) -> Boolean = { _, _ -> false }
     var selected: Pair<Int, Int>? = null
     var onTap: (Int, Int) -> Unit = { _, _ -> }
@@ -185,6 +188,11 @@ class Board(ctx: Context, private val t: GameTheme, val rows: Int, val cols: Int
         }
         line.strokeWidth = 2.5f * d
         canvas.drawRect(ox, oy, ox + cell * cols, oy + cell * rows, line)
+        // segni sui bordi
+        for (r in 0 until rows) for (c in 0 until cols) {
+            rightSign(r, c)?.let { sign(canvas, it, ox + (c + 1) * cell, oy + r * cell + cell / 2) }
+            bottomSign(r, c)?.let { sign(canvas, it, ox + c * cell + cell / 2, oy + (r + 1) * cell) }
+        }
         rightLabels?.let { f ->
             for (r in 0 until rows) {
                 val (s, ok) = f(r)
@@ -197,6 +205,17 @@ class Board(ctx: Context, private val t: GameTheme, val rows: Int, val cols: Int
                 label(canvas, s, ox + c * cell + cell / 2, oy + rows * cell + cell / 2, ok)
             }
         }
+    }
+
+    private fun sign(canvas: Canvas, s: String, cx: Float, cy: Float) {
+        val half = cell * 0.17f
+        fill.color = t.bg
+        canvas.drawRect(cx - half, cy - half, cx + half, cy + half, fill)
+        txt.color = t.fg
+        txt.textSize = cell * 0.34f
+        txt.typeface = Typeface.DEFAULT_BOLD
+        txt.isStrikeThruText = false
+        canvas.drawText(s, cx, cy - (txt.descent() + txt.ascent()) / 2, txt)
     }
 
     private fun label(canvas: Canvas, s: String, cx: Float, cy: Float, ok: Boolean) {

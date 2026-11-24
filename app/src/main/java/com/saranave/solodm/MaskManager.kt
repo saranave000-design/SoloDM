@@ -56,6 +56,21 @@ class MaskManager(private val ctx: Context) {
         }
     }
 
+    /** Accende una sola maschera senza toccare le altre. */
+    fun showOne(key: String, m: Mask) {
+        if (m.rect.width() <= 0 || m.rect.height() <= 0) return
+        val s = slots[key]
+        if (s == null) create(key, m) else show(s, m.rect)
+    }
+
+    fun hideKeys(keys: Collection<String>) {
+        for (k in keys) slots[k]?.let { if (it.shown) hide(it) }
+    }
+
+    fun hideAllExcept(keep: Set<String>) {
+        for ((k, s) in slots) if (k !in keep && s.shown) hide(s)
+    }
+
     fun hideAll() {
         for (s in slots.values) if (s.shown) hide(s)
     }

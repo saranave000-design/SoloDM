@@ -53,6 +53,12 @@ class BlockerService : AccessibilityService() {
         private const val SYSTEMUI = "com.android.systemui"
 
         private val BLOCKED_ORIGINS = setOf(Screen.FEED, Screen.SEARCH, Screen.REELS_TAB)
+
+        private val LAUNCHERS = setOf(
+            "com.miui.home", "com.mi.android.globallauncher", "com.android.launcher3",
+            "com.google.android.apps.nexuslauncher", "com.android.systemui"
+        )
+        private const val QUICK_THROTTLE_MS = 30L
     }
 
     private class Viewer(val screen: Screen, val origin: Screen, val start: Long) {
@@ -69,6 +75,16 @@ class BlockerService : AccessibilityService() {
     private var evalDueAt = 0L
     private var lastChangeAt = 0L
     private var lastScreenKey = ""
+    // anti-lampo
+    private val captureExecutor = Executors.newSingleThreadExecutor()
+    private var captureInFlight = false
+    private var capturePending = false
+    private var lastQuickAt = 0L
+    private var lastStructuralAt = 0L
+    private var recentsOpen = false
+    private var lastRecentsAt = 0L
+    private var feedStableSince = 0L
+
     private var sheetOpen = false
     private var sheetClosedAt = 0L
     private var lastRecognizedMasks: Map<String, MaskManager.Mask> = emptyMap()
@@ -116,7 +132,7 @@ class BlockerService : AccessibilityService() {
         CrashGuard.install(this)
         CrashGuard.clearAlert(this)
         masks = MaskManager(this)
-        masks.setColor(Prefs.bgColor(this) ?: fallbackColor())
+        masks.setColor(initialColor())
         Prefs.sp(this).registerOnSharedPreferenceChangeListener(prefListener)
         // Prepara in anticipo le finestre della home, invisibili
         val (w, h) = screenSize()
@@ -162,6 +178,19 @@ class BlockerService : AccessibilityService() {
             }
             if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) onScrolled(event)
             val structural = event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            if (Prefs.antiFlash(this) && !Prefs.isPaused(this)) {
+                val now = SystemClock.uptimeMillis()
+                if (structural) lastStructuralAt = now
+                // tocco sulla casetta: copri subito, prima che Instagram cambi schermata
+                if ((event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED || event.eventType == AccessibilityEvent.TYPE_VIEW_SELECTED) &&
+                    event.source?.viewIdResourceName?.endsWith(":id/feed_tab") == true
+                ) coverFeedFromMemory("tocco casetta")
+                // controllo rapido: dopo un cambio di schermata (e per 1,5 s) a ogni evento, al massimo ogni 30 ms
+                if ((structural || now - lastStructuralAt < 1500 || now - launchAt < 2500) && now - lastQuickAt >= QUICK_THROTTLE_MS) {
+                    lastQuickAt = now
+                    quickCheck()
+                }
+            }
             val stable = SystemClock.uptimeMillis() - lastChangeAt > STABLE_AFTER_MS
             scheduleEval(if (structural || !stable) EVAL_FAST_MS else EVAL_SLOW_MS)
             return
@@ -177,6 +206,16 @@ class BlockerService : AccessibilityService() {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null && pkg != packageName) {
             lastOtherPkg = pkg
             lastOtherAt = SystemClock.uptimeMillis()
+            if (pkg in LAUNCHERS) {
+                val wasOpen = recentsOpen
+                recentsOpen = event.className?.toString()?.contains("recent", ignoreCase = true) == true
+                if (recentsOpen != wasOpen) diag("app recenti ${if (recentsOpen) "aperte" else "chiuse"} (${event.className})")
+            } else recentsOpen = false
+            if (!recentsOpen) masks.hideKeys(listOf("recents"))
+        }
+        if (recentsOpen && pkg in LAUNCHERS && Prefs.antiFlash(this)) {
+            val now = SystemClock.uptimeMillis()
+            if (now - lastRecentsAt >= QUICK_THROTTLE_MS) { lastRecentsAt = now; updateRecentsMask() }
         }
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
             event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED
@@ -228,8 +267,12 @@ class BlockerService : AccessibilityService() {
         // Instagram si riapre dove l'avevi lasciato; se è rimasto chiuso a lungo, dalla home.
         val leftAgo = System.currentTimeMillis() - Prefs.sp(this).getLong("left_at", 0L)
         val useResume = leftAgo in 0 until RESUME_VALID_MS
-        val mem = (if (useResume) Prefs.loadMemory(this, "resume", w, h) else null)
-            ?: Prefs.loadMemory(this, MODE_HOME, w, h)
+        val home = Prefs.loadMemory(this, MODE_HOME, w, h)
+        var mem = (if (useResume) Prefs.loadMemory(this, "resume", w, h) else null) ?: home
+        // anti-lampo: la home si copre SEMPRE all'apertura; il controllo rapido la scopre
+        // appena è certo che non sei sul feed
+        val feed = home?.get("feed")
+        if (Prefs.antiFlash(this) && feed != null) mem = (mem ?: emptyMap()) + ("feed" to feed)
         if (mem != null) masks.apply(mem)
         diag("apertura $mode ($why): memoria ${if (useResume) "dove l'avevi lasciato" else "home"} " +
             "${mem?.keys?.sorted() ?: "assente"} in ${SystemClock.uptimeMillis() - now} ms")
@@ -252,12 +295,41 @@ class BlockerService : AccessibilityService() {
         handler.postDelayed(evalRunnable, delay)
     }
 
+    private fun fetchRoot(): AccessibilityNodeInfo? = try {
+        rootInActiveWindow
+    } catch (_: Exception) {
+        null
+    }
+
     private fun evaluate() {
-        val root = try {
-            rootInActiveWindow
-        } catch (_: Exception) {
-            null
+        if (!Prefs.antiFlash(this)) {
+            val root = fetchRoot()
+            process(root, null, sync = true)
+            return
         }
+        // Lettura completa della pagina su un binario separato: il principale resta libero
+        // per disegnare maschere e giochini.
+        if (captureInFlight) { capturePending = true; return }
+        captureInFlight = true
+        val (w, h) = screenSize()
+        captureExecutor.execute {
+            val root = fetchRoot()
+            val snap = if (root != null && root.packageName?.toString() == IgUi.PKG && !Prefs.isPaused(this)) {
+                try { Snapshot.capture(root, w, h) } catch (_: Exception) { null }
+            } else null
+            handler.post {
+                captureInFlight = false
+                try {
+                    process(root, snap, sync = false)
+                } catch (t: Throwable) {
+                    CrashGuard.record(this, "valutazione", t)
+                }
+                if (capturePending) { capturePending = false; scheduleEval(EVAL_FAST_MS) }
+            }
+        }
+    }
+
+    private fun process(root: AccessibilityNodeInfo?, snapIn: Snapshot?, sync: Boolean) {
         val now = SystemClock.uptimeMillis()
         if (root == null || root.packageName?.toString() != IgUi.PKG) {
             // Appena toccata l'icona Instagram non è ancora in primo piano: aspetta
@@ -284,11 +356,9 @@ class BlockerService : AccessibilityService() {
         }
 
         val (w, h) = screenSize()
-        val snap = try {
-            Snapshot.capture(root, w, h)
-        } catch (_: Exception) {
-            return
-        }
+        val snap = snapIn ?: if (sync) {
+            try { Snapshot.capture(root, w, h) } catch (_: Exception) { return }
+        } else return
         val screen = Classifier.classify(snap)
         val sheetNow = snap.hasAny(IgUi.SHEET_IDS)
         if (sheetOpen && !sheetNow) sheetClosedAt = now
@@ -322,7 +392,10 @@ class BlockerService : AccessibilityService() {
             if (screen == Screen.FEED) Prefs.saveMemory(this, MODE_HOME, w, h, desired)
             val key = screen.name + desired.keys.sorted()
             if (key != lastScreenKey) { lastScreenKey = key; lastChangeAt = now }
-            maybeSampleColor(snap)
+            if (screen == Screen.FEED) {
+                if (feedStableSince == 0L) feedStableSince = now
+                if (now - feedStableSince > 700) maybeSampleColor(snap)
+            } else feedStableSince = 0L
         } else if (holding) {
             handler.postDelayed({ scheduleEval(1) }, 200)
         }
@@ -523,22 +596,49 @@ class BlockerService : AccessibilityService() {
 
     // ------------------------------------------------------------------ colore
 
-    private fun fallbackColor(): Int {
-        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        return if (night) Color.BLACK else Color.WHITE
+    private fun isDark(): Boolean =
+        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+
+    private fun fallbackColor(): Int = if (isDark()) Color.BLACK else Color.WHITE
+
+    private fun luminance(c: Int) = (Color.red(c) * 299 + Color.green(c) * 587 + Color.blue(c) * 114) / 1000
+
+    /** Il colore va bene solo se è coerente col tema: scuro nel tema scuro, chiaro in quello chiaro. */
+    private fun fitsTheme(c: Int) = if (isDark()) luminance(c) < 90 else luminance(c) > 165
+
+    private fun initialColor(): Int {
+        Prefs.lockedColor(this, isDark())?.let { return it }
+        val saved = Prefs.bgColor(this)
+        return if (saved != null && fitsTheme(saved)) saved else fallbackColor()
     }
 
-    /** Campiona il colore di sfondo di Instagram dal bordo sinistro della barra in alto. */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (::masks.isInitialized) {
+            masks.setColor(initialColor())
+            sampledThisSession = false
+        }
+    }
+
+    /**
+     * Campiona il colore di sfondo dal bordo sinistro della barra della home (solo a home ferma).
+     * Dopo 3 campioni uguali di fila il colore si blocca e non si ricampiona più.
+     */
     private fun maybeSampleColor(s: Snapshot) {
         if (sampledThisSession || Build.VERSION.SDK_INT < 30) return
+        val dark = isDark()
+        Prefs.lockedColor(this, dark)?.let { locked ->
+            sampledThisSession = true
+            if (locked != masks.color) masks.setColor(locked)
+            return
+        }
         val now = SystemClock.uptimeMillis()
         if (now - lastShotAt < 10_000) return
         lastShotAt = now
-        val bar = s.firstOf(IgUi.ACTION_BAR_IDS)?.bounds
-        val yTop = bar?.top?.plus(dp(4)) ?: dp(30)
-        val yBottom = bar?.bottom?.minus(dp(4))?.takeIf { it > yTop } ?: (yTop + dp(20))
-        val points = (0..4).map { i -> dp(3) to (yTop + (yBottom - yTop) * i / 4) } +
-            listOf((s.screenW - dp(3)) to yTop)
+        val bar = s.firstOf(IgUi.FEED_BAR_IDS)?.bounds ?: return
+        if (bar.height() < dp(16)) return
+        val ys = (1..4).map { bar.top + bar.height() * it / 5 }
+        val points = ys.map { dp(3) to it } + ys.take(2).map { (s.screenW - dp(3)) to it }
         try {
             takeScreenshot(Display.DEFAULT_DISPLAY, shotExecutor, object : TakeScreenshotCallback {
                 override fun onSuccess(result: ScreenshotResult) {
@@ -547,19 +647,23 @@ class BlockerService : AccessibilityService() {
                         val hw = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace) ?: return
                         val bmp = hw.copy(Bitmap.Config.ARGB_8888, false) ?: return
                         val colors = points.mapNotNull { (x, y) ->
-                            if (x in 0 until bmp.width && y in 0 until bmp.height) bmp.getPixel(x, y) else null
+                            if (x in 0 until bmp.width && y in 0 until bmp.height) bmp.getPixel(x, y) or 0xFF000000.toInt() else null
                         }
                         bmp.recycle(); hw.recycle()
                         val best = colors.groupingBy { it }.eachCount().maxByOrNull { it.value } ?: return
-                        if (best.value < 3) return
-                        val c = best.key or 0xFF000000.toInt()
+                        // serve accordo quasi totale (almeno 5 punti su 6)
+                        if (best.value < 5) return
+                        val c = best.key
                         handler.post {
                             sampledThisSession = true
-                            if (c != masks.color) {
-                                masks.setColor(c)
-                                Prefs.setBgColor(this@BlockerService, c)
-                                diag("colore sfondo campionato: #%06X".format(c and 0xFFFFFF))
+                            if (!fitsTheme(c) || isDark() != dark) {
+                                diag("colore campionato scartato: #%06X (non adatto al tema)".format(c and 0xFFFFFF))
+                                return@post
                             }
+                            val locked = Prefs.offerColor(this@BlockerService, dark, c)
+                            Prefs.setBgColor(this@BlockerService, c)
+                            if (c != masks.color) masks.setColor(c)
+                            diag("colore campionato: #%06X%s".format(c and 0xFFFFFF, if (locked) " (bloccato)" else ""))
                         }
                     } catch (_: Exception) {
                     } finally {
@@ -571,6 +675,85 @@ class BlockerService : AccessibilityService() {
             })
         } catch (_: Exception) {
         }
+    }
+
+    // ------------------------------------------------------------------ anti-lampo
+
+    private fun findVisible(root: AccessibilityNodeInfo, id: String): AccessibilityNodeInfo? = try {
+        root.findAccessibilityNodeInfosByViewId("${IgUi.PKG}:id/$id").firstOrNull { it.isVisibleToUser }
+    } catch (_: Exception) {
+        null
+    }
+
+    /** Copre subito la home usando la memoria (o i bordi della barra, se la memoria manca). */
+    private fun coverFeedFromMemory(why: String, root: AccessibilityNodeInfo? = null, bar: AccessibilityNodeInfo? = null) {
+        if ("feed" in masks.visibleKeys()) return
+        val (w, h) = screenSize()
+        val home = Prefs.loadMemory(this, MODE_HOME, w, h)
+        val feed = home?.get("feed") ?: run {
+            if (root == null || bar == null) return
+            val r = Rect(); bar.getBoundsInScreen(r)
+            val tab = findVisible(root, "tab_bar")
+            val tr = Rect(); tab?.getBoundsInScreen(tr)
+            val bottom = if (tab != null && tr.top > h / 2) tr.top else h
+            if (bottom - r.bottom < 100) return
+            MaskManager.Mask(Rect(0, r.bottom, w, bottom), MaskManager.Kind.GAME)
+        }
+        masks.showOne("feed", feed)
+        home?.get("tab_reels")?.let { masks.showOne("tab_reels", it) }
+        diag("rapido: home coperta ($why)")
+    }
+
+    /**
+     * Controllo rapido con ricerche mirate (pochissime richieste invece di leggere tutta la pagina):
+     * barra della home visibile → copri subito; chat/profilo visibili → scopri subito.
+     */
+    private fun quickCheck() {
+        val root = fetchRoot() ?: return
+        if (root.packageName?.toString() != IgUi.PKG) return
+        val feedBar = findVisible(root, "main_feed_action_bar")
+        if (feedBar != null && findVisible(root, "action_bar_button_back") == null) {
+            coverFeedFromMemory("barra home", root, feedBar)
+            return
+        }
+        val visible = masks.visibleKeys()
+        if ("feed" !in visible && "esplora" !in visible) return
+        val notFeed = findVisible(root, "direct_inbox_action_bar") ?: findVisible(root, "row_thread_composer_edittext")
+            ?: findVisible(root, "profile_header_container") ?: findVisible(root, "reel_viewer_root")
+            ?: findVisible(root, "clips_viewer_view_pager")
+        if (notFeed != null) {
+            masks.hideKeys(listOf("feed", "esplora"))
+            diag("rapido: maschere tolte (${IgUi.entryName(notFeed)})")
+        }
+    }
+
+    /** App recenti: copre la parte con i post nella scheda di Instagram, se l'avevi lasciato sulla home. */
+    private fun updateRecentsMask() {
+        val (w, h) = screenSize()
+        val resume = Prefs.loadMemory(this, "resume", w, h)
+        val feed = resume?.get("feed")
+        if (feed == null) { masks.hideKeys(listOf("recents")); return }
+        val root = fetchRoot() ?: return
+        val labels = try { root.findAccessibilityNodeInfosByText("Instagram") } catch (_: Exception) { emptyList() }
+        var card: Rect? = null
+        for (lab in labels) {
+            var n: AccessibilityNodeInfo? = lab
+            var depth = 0
+            while (n != null && depth < 8) {
+                val r = Rect(); n.getBoundsInScreen(r)
+                if (r.height() in (h * 0.25f).toInt()..(h * 0.95f).toInt() && r.width() < w * 0.97f && r.width() > w * 0.2f) { card = r; break }
+                n = n.parent; depth++
+            }
+            if (card != null) break
+        }
+        val c = card ?: run { masks.hideKeys(listOf("recents")); return }
+        val sx = c.width().toFloat() / w
+        val sy = c.height().toFloat() / h
+        val rect = Rect(
+            c.left, (c.top + feed.rect.top * sy).toInt(),
+            c.right, (c.top + feed.rect.bottom * sy).toInt().coerceAtMost(c.bottom)
+        )
+        if (sx > 0 && rect.height() > 20) masks.showOne("recents", MaskManager.Mask(rect)) else masks.hideKeys(listOf("recents"))
     }
 
     // ------------------------------------------------------------------ azioni
@@ -618,11 +801,12 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun leftInstagram() {
-        if (!igForeground && masks.visibleKeys().isEmpty()) return
+        if (!igForeground && masks.visibleKeys().all { it == "recents" }) return
         igForeground = false
-        masks.hideAll()
+        if (recentsOpen) masks.hideAllExcept(setOf("recents")) else masks.hideAll()
         viewer = null
         current = Screen.UNKNOWN
+        feedStableSince = 0L
         val (w, h) = screenSize()
         Prefs.saveMemory(this, "resume", w, h, lastRecognizedMasks)
         Prefs.sp(this).edit().putLong("left_at", System.currentTimeMillis()).apply()

@@ -89,6 +89,29 @@ class AdvancedActivity : Activity() {
             refresh()
         }
 
+        // ---- Anti-lampo e colore
+        val c0 = ui.cardBox(col)
+        ui.text(c0, "Anti-lampo", 17f, bold = true)
+        ui.text(
+            c0,
+            "Copre la home già all'apertura e al tocco della casetta, la scopre appena sei in chat, " +
+                "copre l'anteprima nelle app recenti e alleggerisce il lavoro del telefono. " +
+                "Se noti qualcosa di strano, spegnilo: torna tutto come nella versione 1.4.",
+            14f, ui.muted
+        )
+        val swAf = Switch(this)
+        swAf.text = "Anti-lampo attivo"
+        swAf.setTextColor(ui.fg)
+        swAf.isChecked = Prefs.antiFlash(this)
+        swAf.setOnCheckedChangeListener { _, on -> Prefs.setAntiFlash(this, on) }
+        c0.addView(swAf)
+        ui.spacer(c0, 10)
+        ui.text(c0, "Colore delle maschere: viene preso dallo sfondo di Instagram e bloccato quando è sicuro. Se un giorno non combacia più:", 14f, ui.muted)
+        ui.button(c0, "Ricalcola colore", primary = false) {
+            Prefs.resetColors(this)
+            Toast.makeText(this, "Ok: lo ricalcolo alle prossime aperture della home", Toast.LENGTH_LONG).show()
+        }
+
         // ---- Diagnosi
         val c2 = ui.cardBox(col)
         ui.text(c2, "Diagnosi", 17f, bold = true)
