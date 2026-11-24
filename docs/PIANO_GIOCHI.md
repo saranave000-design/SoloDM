@@ -206,3 +206,7 @@ Correzione:
 - accordo di almeno 4 punti su 5;
 - cambiare le chiavi del colore bloccato (es. suffisso `_v2`) e ignorare `bg_color` salvato,
   così il colore sbagliato già bloccato viene scartato all'aggiornamento.
+**Decisione di Sara (24/11):** niente campionamento automatico. Usare direttamente i colori misurati
+dagli screenshot: tema scuro = **#0C0F14**; tema chiaro = #FFFFFF finché non arriva uno screenshot
+in tema chiaro da misurare. Il campionamento resta solo dietro al pulsante "Ricalcola colore"
+(con i punti corretti qui sopra), per il caso in cui Instagram cambi colore.
