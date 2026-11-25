@@ -210,3 +210,14 @@ Correzione:
 dagli screenshot: tema scuro = **#0C0F14**; tema chiaro = #FFFFFF finché non arriva uno screenshot
 in tema chiaro da misurare. Il campionamento resta solo dietro al pulsante "Ricalcola colore"
 (con i punti corretti qui sopra), per il caso in cui Instagram cambi colore.
+
+## Segnalazioni sulla 1.5 (25/11/2026)
+1. **Lampi da Esplora**: l'anti-lampo copre solo la home. Estendere a Esplora:
+   controllo rapido su `explore_action_bar` (+ niente `row_search_user*`/campo di ricerca attivo),
+   copertura al tocco di `search_tab`, all'apertura se l'ultima schermata era Esplora;
+   salvare in memoria anche la maschera "esplora" (come "feed" in `mem_home`).
+2. **App recenti da Esplora**: coprire anche se la memoria "resume" contiene "esplora".
+3. **La maschera delle recenti blocca il tocco sulla scheda**: renderla trasparente ai tocchi
+   (FLAG_NOT_TOUCHABLE; lo strato di accessibilità è attendibile, i tocchi passano).
+   Serve in MaskManager un tipo di maschera "solo visiva".
+Nota positiva: il riconoscimento delle app recenti su Xiaomi funziona (maschera vista sulla home).
