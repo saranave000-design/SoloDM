@@ -11,8 +11,8 @@ android {
         applicationId = "com.saranave.solodm"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.8"
+        versionCode = 11
+        versionName = "1.8.1"
     }
 
     // Chiave fissa salvata nel repo: così ogni nuova versione si installa

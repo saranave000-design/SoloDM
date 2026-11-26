@@ -54,6 +54,12 @@ class BlockerService : AccessibilityService() {
         private val BLOCKED_ORIGINS = setOf(Screen.FEED, Screen.SEARCH, Screen.REELS_TAB)
 
         private const val QUICK_THROTTLE_MS = 30L
+        private const val EXIT_COVER_MS = 500L
+        private const val ENTRY_COVER_MAX_MS = 1500L
+        private val LAUNCHERS = setOf(
+            "com.miui.home", "com.mi.android.globallauncher", "com.android.launcher3",
+            "com.google.android.apps.nexuslauncher"
+        )
     }
 
     private class Viewer(val screen: Screen, val origin: Screen, val start: Long) {
@@ -217,6 +223,13 @@ class BlockerService : AccessibilityService() {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null && pkg != packageName) {
             lastOtherPkg = pkg
             lastOtherAt = SystemClock.uptimeMillis()
+            // Uscita verso home del telefono o app recenti mentre home/Esplora sono coperte:
+            // copri tutto lo schermo durante l'animazione (la scheda che si rimpicciolisce mostrerebbe i post)
+            val cls = event.className?.toString() ?: ""
+            val toLauncher = pkg in LAUNCHERS || (pkg == SYSTEMUI && cls.contains("recent", ignoreCase = true))
+            if (toLauncher && igForeground && Prefs.antiFlash(this) && !Prefs.isPaused(this) &&
+                masks.visibleKeys().any { it == "feed" || it == "esplora" }
+            ) fullCover(EXIT_COVER_MS, "uscita da Instagram")
         }
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
             event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED
@@ -274,6 +287,8 @@ class BlockerService : AccessibilityService() {
         val feed = home?.get("feed")
         if (Prefs.antiFlash(this) && feed != null) mem = (mem ?: emptyMap()) + ("feed" to feed)
         if (mem != null) masks.apply(mem)
+        // Rientro (dalle recenti o dall'icona) verso home/Esplora: tutto coperto finché la pagina non è riconosciuta
+        if (Prefs.antiFlash(this) && mem != null && ("feed" in mem || "esplora" in mem)) fullCover(ENTRY_COVER_MAX_MS, "rientro")
         diag("apertura $mode ($why): memoria ${if (useResume) "dove l'avevi lasciato" else "home"} " +
             "${mem?.keys?.sorted() ?: "assente"} in ${SystemClock.uptimeMillis() - now} ms")
     }
@@ -773,6 +788,21 @@ class BlockerService : AccessibilityService() {
         }
     }
 
+    // ------------------------------------------------------------------ copertura totale (uscita / rientro)
+
+    private var fullCoverUntil = 0L
+    private val fullCoverOff = Runnable { fullCoverUntil = 0L; masks.hideKeys(listOf("fullcover")) }
+
+    /** Copre tutto lo schermo col colore di sfondo per al massimo [ms] millisecondi. */
+    private fun fullCover(ms: Long, why: String) {
+        val (w, h) = screenSize()
+        masks.showOne("fullcover", MaskManager.Mask(Rect(0, 0, w, h)))
+        fullCoverUntil = SystemClock.uptimeMillis() + ms
+        handler.removeCallbacks(fullCoverOff)
+        handler.postDelayed(fullCoverOff, ms)
+        diag("copertura totale ($why, max $ms ms)")
+    }
+
     // ------------------------------------------------------------------ tocco su casetta / lente
 
     private fun onGuardTouch(key: String, action: Int) {
@@ -845,7 +875,7 @@ class BlockerService : AccessibilityService() {
         if (!igForeground && masks.visibleKeys().isEmpty()) return
         igForeground = false
         picker?.close()
-        masks.hideAll()
+        if (SystemClock.uptimeMillis() < fullCoverUntil) masks.hideAllExcept(setOf("fullcover")) else masks.hideAll()
         returnBase = null
         viewer = null
         current = Screen.UNKNOWN

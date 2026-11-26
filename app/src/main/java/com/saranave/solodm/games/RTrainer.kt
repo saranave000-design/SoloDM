@@ -108,6 +108,8 @@ object GameR : Game {
         val modeBox = LinearLayout(k.ctx).apply { orientation = LinearLayout.VERTICAL }
         val card = LinearLayout(k.ctx).apply { orientation = LinearLayout.VERTICAL }
         var mode = (sp.getString("r_mode", "mix") ?: "mix").let { if (it == "bug") "teo" else it }
+        // zona di "No, riprova" e della soluzione: va creata PRIMA di init (lì parte già il primo esercizio)
+        val msg = LinearLayout(k.ctx).apply { orientation = LinearLayout.VERTICAL }
 
         init {
             root.addView(score, full())
@@ -182,8 +184,6 @@ object GameR : Game {
             (p as? ScrollView)?.scrollTo(0, 0)
         }
 
-        // ---------- esito
-        val msg = LinearLayout(k.ctx).apply { orientation = LinearLayout.VERTICAL }
 
         /** Primo errore: "No, riprova" e la soluzione solo a richiesta. */
         fun retry(onSol: () -> Unit) {

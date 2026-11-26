@@ -263,3 +263,9 @@ Rimandati: buco per la bollina notifiche e per la bollina dei messaggi, tua stor
 - Tolta la maschera delle app recenti: si usa la funzione Xiaomi "Sfoca anteprime app".
 - Lettura completa meno frequente a pagina ferma (700 ms invece di 450).
 - R · allenamento: "Trova il bug" sostituito da "Teoria" (97 domande a 3 risposte, dall'artifact aggiornato).
+
+## 1.8.1 (26/11/2026)
+- R · allenamento non partiva: la zona dei messaggi veniva creata dopo l'avvio del primo esercizio (ordine di inizializzazione Kotlin). Corretto.
+- Uscita verso home del telefono / recenti con home o Esplora coperte: copertura di tutto lo schermo per 0,5 s (animazione della scheda).
+- Rientro verso home/Esplora: tutto coperto finché la pagina non è riconosciuta (max 1,5 s).
+- Scheda nelle recenti: Sara usa lo sfocamento Xiaomi, funziona.
