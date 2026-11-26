@@ -228,4 +228,7 @@ Nota positiva: il riconoscimento delle app recenti su Xiaomi funziona (maschera 
   Implementazione: pila delle mosse (casella, valore precedente) nel `numberGrid` e nei giochi a tocco.
 - **Errori nascosti di serie**: niente sottolineatura automatica delle caselle sbagliate.
 - Pulsante **"Tieni premuto per vedere gli errori"**: mostra la sottolineatura solo finché è premuto.
-- Da chiedere a Sara: in Sumplete anche il cerchietto sulle somme già giuste è un aiuto → nasconderlo?
+- **Sumplete** (decisione di Sara): niente cerchietto automatico sulle somme giuste; è lei a
+  cerchiarle toccando i numeri fuori dalla griglia (somme di riga a destra, di colonna sotto),
+  come promemoria. Tocco di nuovo = toglie il cerchio. Anche queste azioni vanno nella pila di Annulla.
+  Il cerchio automatico (somma davvero giusta) compare solo tenendo premuto "vedi errori".
