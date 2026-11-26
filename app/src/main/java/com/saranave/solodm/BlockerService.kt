@@ -391,7 +391,7 @@ class BlockerService : AccessibilityService() {
                 diag("apertura $launchMode: riconosciuta $screen dopo ${now - launchAt} ms")
             }
             lastRecognizedMasks = desired
-            if (screen == Screen.FEED) Prefs.saveMemory(this, MODE_HOME, w, h, desired)
+            if (screen == Screen.FEED && snap.hasAny(IgUi.FEED_BAR_IDS)) Prefs.saveMemory(this, MODE_HOME, w, h, desired)
             if (screen == Screen.SEARCH && "esplora" in desired) Prefs.saveMemory(this, MODE_EXPLORE, w, h, desired)
             val key = screen.name + desired.keys.sorted()
             if (key != lastScreenKey) { lastScreenKey = key; lastChangeAt = now }
@@ -568,8 +568,12 @@ class BlockerService : AccessibilityService() {
 
         when (screen) {
             Screen.FEED -> {
-                val top = contentTop(s)
-                if (tabTop - top > 100) out["feed"] = MaskManager.Mask(Rect(0, top, s.screenW, tabTop), MaskManager.Kind.GAME)
+                val remembered = if (!s.hasAny(IgUi.FEED_BAR_IDS)) Prefs.loadMemory(this, MODE_HOME, s.screenW, s.screenH)?.get("feed") else null
+                if (remembered != null) out["feed"] = remembered
+                else {
+                    val top = contentTop(s)
+                    if (tabTop - top > 100) out["feed"] = MaskManager.Mask(Rect(0, top, s.screenW, tabTop), MaskManager.Kind.GAME)
+                }
             }
             Screen.SEARCH -> {
                 val edit = s.firstOf(IgUi.SEARCH_EDIT_IDS)
@@ -694,7 +698,6 @@ class BlockerService : AccessibilityService() {
             if (bottom - r.bottom < 100) return
             MaskManager.Mask(Rect(0, r.bottom, w, bottom), MaskManager.Kind.GAME)
         }
-        masks.hideKeys(listOf("esplora"))
         masks.showOne("feed", feed)
         home?.get("tab_reels")?.let { masks.showOne("tab_reels", it) }
         diag("rapido: home coperta ($why)")
@@ -714,7 +717,6 @@ class BlockerService : AccessibilityService() {
             if (bottom - r.bottom < 100) return
             MaskManager.Mask(Rect(0, r.bottom, w, bottom), MaskManager.Kind.GAME)
         }
-        masks.hideKeys(listOf("feed"))
         masks.showOne("esplora", m)
         mem?.get("tab_reels")?.let { masks.showOne("tab_reels", it) }
         diag("rapido: Esplora coperta ($why)")
@@ -762,7 +764,7 @@ class BlockerService : AccessibilityService() {
         }
     }
 
-    /** App recenti: copre la parte con i post nella scheda di Instagram, se l'avevi lasciato sulla home o su Esplora. I tocchi passano. */
+    /** App recenti: copre la parte con i post nella scheda di Instagram, se l'avevi lasciato sulla home o su Esplora: tutta la scheda. I tocchi passano. */
     private fun updateRecentsMask() {
         val (w, h) = screenSize()
         val resume = Prefs.loadMemory(this, "resume", w, h)
@@ -782,13 +784,9 @@ class BlockerService : AccessibilityService() {
             if (card != null) break
         }
         val c = card ?: run { masks.hideKeys(listOf("recents")); return }
-        val sx = c.width().toFloat() / w
-        val sy = c.height().toFloat() / h
-        val rect = Rect(
-            c.left, (c.top + feed.rect.top * sy).toInt(),
-            c.right, (c.top + feed.rect.bottom * sy).toInt().coerceAtMost(c.bottom)
-        )
-        if (sx > 0 && rect.height() > 20) masks.showOne("recents", MaskManager.Mask(rect, touchable = false)) else masks.hideKeys(listOf("recents"))
+        // tutta la scheda di Instagram (scelta di Sara): se resta un po' indietro mentre scorri, si nota meno
+        if (c.width() > 20 && c.height() > 20) masks.showOne("recents", MaskManager.Mask(Rect(c), touchable = false))
+        else masks.hideKeys(listOf("recents"))
     }
 
     // ------------------------------------------------------------------ azioni

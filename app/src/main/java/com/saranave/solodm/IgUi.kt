@@ -221,6 +221,8 @@ object Classifier {
         if (selected == IgUi.TAB_FEED && !hasBack && (hasFeedRows || s.hasPrefix(IgUi.STORY_TRAY_PREFIXES))) {
             return Screen.FEED
         }
+        // Casetta selezionata ma pagina ancora in caricamento: è comunque la home (va coperta)
+        if (selected == IgUi.TAB_FEED && !hasBack) return Screen.FEED
         return Screen.UNKNOWN
     }
 

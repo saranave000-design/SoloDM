@@ -243,3 +243,8 @@ Nota positiva: il riconoscimento delle app recenti su Xiaomi funziona (maschera 
 - **Giochini**: ↶ Annulla, ⟲ Ricomincia, 👁 tieni premuto per vedere gli errori (nascosti di base) in Sumplete, KenKen, Sudoku, Kakuro, Futoshiki, Hitori, Binario. Sumplete: tocchi le somme fuori dalla griglia per cerchiarle tu; il cerchio "vero" (somma giusta) si vede solo con 👁.
 
 Rimandati: buco per la bollina notifiche e per la bollina dei messaggi, tua storia nella barra in alto, difficoltà per 24/Bersaglio, notifica fissa "Solo DM attiva".
+
+## 1.6.1 (26/11/2026)
+- Flash: dalla diagnosi, durante il cambio pagina la casetta risultava già selezionata ma la pagina era "sconosciuta" → la maschera veniva tolta. Ora casetta selezionata (senza freccia indietro) = home, coperta con il rettangolo in memoria. La memoria della home si salva solo quando c'è `main_feed_action_bar`.
+- Le coperture rapide di home ed Esplora non si spengono più a vicenda.
+- App recenti: coperta tutta la scheda di Instagram (scelta B di Sara, da valutare: "non so se mi soddisfa").
