@@ -221,3 +221,11 @@ in tema chiaro da misurare. Il campionamento resta solo dietro al pulsante "Rica
    (FLAG_NOT_TOUCHABLE; lo strato di accessibilità è attendibile, i tocchi passano).
    Serve in MaskManager un tipo di maschera "solo visiva".
 Nota positiva: il riconoscimento delle app recenti su Xiaomi funziona (maschera vista sulla home).
+
+## Richieste giochi (26/11/2026)
+- **Annulla** (indietro di una mossa) e **Ricomincia** in tutti i giochi a griglia
+  (Sudoku, KenKen, Kakuro, Futoshiki, Sumplete, Hitori, Binario). 24/Bersaglio li hanno già.
+  Implementazione: pila delle mosse (casella, valore precedente) nel `numberGrid` e nei giochi a tocco.
+- **Errori nascosti di serie**: niente sottolineatura automatica delle caselle sbagliate.
+- Pulsante **"Tieni premuto per vedere gli errori"**: mostra la sottolineatura solo finché è premuto.
+- Da chiedere a Sara: in Sumplete anche il cerchietto sulle somme già giuste è un aiuto → nasconderlo?
