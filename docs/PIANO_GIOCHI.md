@@ -227,7 +227,8 @@ Nota positiva: il riconoscimento delle app recenti su Xiaomi funziona (maschera 
   (Sudoku, KenKen, Kakuro, Futoshiki, Sumplete, Hitori, Binario). 24/Bersaglio li hanno già.
   Implementazione: pila delle mosse (casella, valore precedente) nel `numberGrid` e nei giochi a tocco.
 - **Errori nascosti di serie**: niente sottolineatura automatica delle caselle sbagliate.
-- Pulsante **"Tieni premuto per vedere gli errori"**: mostra la sottolineatura solo finché è premuto.
+- Pulsante **"vedi errori"** = tastino con l'icona di un **occhio** 👁 (niente scritta), accanto ad
+  Annulla/Ricomincia: mostra la sottolineatura degli errori solo finché è tenuto premuto.
 - **Sumplete** (decisione di Sara): niente cerchietto automatico sulle somme giuste; è lei a
   cerchiarle toccando i numeri fuori dalla griglia (somme di riga a destra, di colonna sotto),
   come promemoria. Tocco di nuovo = toglie il cerchio. Anche queste azioni vanno nella pila di Annulla.
