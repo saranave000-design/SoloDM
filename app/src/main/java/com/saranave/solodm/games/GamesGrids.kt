@@ -15,33 +15,54 @@ object GameSumplete : Game {
         val n = p.n
         // 0 = da decidere, 1 = tolto (X), 2 = tenuto (cerchio)
         val state = Array(n) { IntArray(n) }
+        // somme cerchiate a mano (promemoria): righe e colonne
+        val rowMark = BooleanArray(n); val colMark = BooleanArray(n)
+        val undo = ArrayList<() -> Unit>()
         var done = false
         val col = k.column()
-        col.addView(k.text("Togli i numeri (X) finché ogni riga e colonna\ndà la somma indicata. Tocca di nuovo per cerchiare.", 13f, color = k.t.dim), k.lp())
+        col.addView(k.text("Togli i numeri (X) finché ogni riga e colonna\ndà la somma indicata. Tocca di nuovo per cerchiare.\nTocca una somma fuori dalla griglia per cerchiarla.", 13f, color = k.t.dim), k.lp())
         val board = Board(k.ctx, k.t, n, n)
         fun crossed() = Array(n) { r -> BooleanArray(n) { c -> state[r][c] == 1 } }
         board.text = { r, c -> "${p.grid[r][c]}" }
         board.style = { r, c -> when (state[r][c]) { 1 -> Board.Style.CROSSED; 2 -> Board.Style.CIRCLED; else -> Board.Style.NORMAL } }
-        board.rightLabels = { r -> "${p.rowSums[r]}" to Sumplete.rowOk(p, crossed(), r) }
-        board.bottomLabels = { c -> "${p.colSums[c]}" to Sumplete.colOk(p, crossed(), c) }
+        // con 👁 premuto: cerchio = somma davvero giusta; altrimenti: i cerchi messi a mano
+        board.rightLabels = { r -> "${p.rowSums[r]}" to (if (board.showErrors) Sumplete.rowOk(p, crossed(), r) else rowMark[r]) }
+        board.bottomLabels = { c -> "${p.colSums[c]}" to (if (board.showErrors) Sumplete.colOk(p, crossed(), c) else colMark[c]) }
         val msg = k.text("", 15f)
         board.onTap = { r, c ->
             if (!done) {
-                state[r][c] = (state[r][c] + 1) % 3
+                val old = state[r][c]
+                undo += { state[r][c] = old }
+                state[r][c] = (old + 1) % 3
                 if (Sumplete.solved(p, crossed())) { done = true; msg.text = "✓ Risolto!"; onWin() }
+                board.invalidate()
+            }
+        }
+        board.onLabelTap = { isRow, i ->
+            if (!done) {
+                val arr = if (isRow) rowMark else colMark
+                undo += { arr[i] = !arr[i] }
+                arr[i] = !arr[i]
                 board.invalidate()
             }
         }
         col.addView(board, k.lp(ViewGroup.LayoutParams.MATCH_PARENT))
         col.addView(msg, k.lp())
+        col.addView(k.tools(board, onUndo = {
+            if (!done && undo.isNotEmpty()) { undo.removeAt(undo.size - 1)(); board.invalidate() }
+        }, onRestart = {
+            for (r in 0 until n) java.util.Arrays.fill(state[r], 0)
+            java.util.Arrays.fill(rowMark, false); java.util.Arrays.fill(colMark, false)
+            undo.clear(); done = false; msg.text = ""; board.invalidate()
+        }), k.lp(ViewGroup.LayoutParams.MATCH_PARENT))
         return col
     }
 }
 
 // ------------------------------------------------------------------ griglie con numeri da inserire
 
-/** Base per KenKen, Sudoku e Kakuro: tocchi una casella, poi un numero. */
-private fun numberGrid(
+/** Base per KenKen, Sudoku, Kakuro e Futoshiki: tocchi una casella, poi un numero. */
+internal fun numberGrid(
     k: Kit,
     board: Board,
     maxNum: Int,
@@ -55,15 +76,30 @@ private fun numberGrid(
     col.addView(k.text(hint, 13f, color = k.t.dim), k.lp())
     val msg = k.text("", 15f)
     var done = false
+    val initial = Array(values.size) { values[it].clone() }
+    val undo = ArrayList<Triple<Int, Int, Int>>()
     board.onTap = { r, c ->
         if (!done && editable(r, c)) { board.selected = r to c; board.invalidate() }
     }
     col.addView(board, k.lp(ViewGroup.LayoutParams.MATCH_PARENT))
     col.addView(msg, k.lp())
+    col.addView(k.tools(board, onUndo = {
+        if (!done && undo.isNotEmpty()) {
+            val (r, c, old) = undo.removeAt(undo.size - 1)
+            values[r][c] = old; board.selected = r to c; board.invalidate()
+        }
+    }, onRestart = {
+        for (r in values.indices) values[r] = initial[r].clone()
+        undo.clear(); done = false; msg.text = ""; board.selected = null; board.invalidate()
+    }), k.lp(ViewGroup.LayoutParams.MATCH_PARENT))
     val pad = k.numberPad(maxNum) { key ->
         val sel = board.selected ?: return@numberPad
         if (done) return@numberPad
-        values[sel.first][sel.second] = if (key == "⌫") 0 else key.toInt()
+        val nv = if (key == "⌫") 0 else key.toInt()
+        val old = values[sel.first][sel.second]
+        if (nv == old) return@numberPad
+        undo += Triple(sel.first, sel.second, old)
+        values[sel.first][sel.second] = nv
         if (check()) { done = true; board.selected = null; msg.text = "✓ Risolto!"; onWin() }
         board.invalidate()
     }

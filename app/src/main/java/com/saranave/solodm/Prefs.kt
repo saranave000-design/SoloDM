@@ -54,38 +54,29 @@ object Prefs {
         return out
     }
 
-    fun bgColor(c: Context): Int? = if (sp(c).contains("bg_color")) sp(c).getInt("bg_color", 0) else null
-
-    fun setBgColor(c: Context, color: Int) {
-        sp(c).edit().putInt("bg_color", color).apply()
-    }
-
     // ---- anti-lampo (interruttore in "Altro", acceso di serie)
     fun antiFlash(c: Context): Boolean = sp(c).getBoolean("anti_flash", true)
     fun setAntiFlash(c: Context, on: Boolean) { sp(c).edit().putBoolean("anti_flash", on).apply() }
 
-    // ---- colore bloccato: uno per il tema chiaro e uno per lo scuro
+    // ---- colore delle maschere: campionato a mano col mirino, uno per tema chiaro e uno per scuro
     private fun themeKey(dark: Boolean) = if (dark) "dark" else "light"
-    fun lockedColor(c: Context, dark: Boolean): Int? =
-        if (sp(c).contains("color_lock_${themeKey(dark)}")) sp(c).getInt("color_lock_${themeKey(dark)}", 0) else null
-
-    /** Registra un campione; dopo 3 campioni uguali di fila il colore viene bloccato. Restituisce true se ora è bloccato. */
-    fun offerColor(c: Context, dark: Boolean, color: Int): Boolean {
-        val k = themeKey(dark)
-        val sp = sp(c)
-        val cand = if (sp.contains("color_cand_$k")) sp.getInt("color_cand_$k", 0) else null
-        val count = if (cand == color) sp.getInt("color_count_$k", 0) + 1 else 1
-        val e = sp.edit().putInt("color_cand_$k", color).putInt("color_count_$k", count)
-        if (count >= 3) e.putInt("color_lock_$k", color)
-        e.apply()
-        return count >= 3
+    fun pickedColor(c: Context, dark: Boolean): Int? =
+        if (sp(c).contains("picked_${themeKey(dark)}")) sp(c).getInt("picked_${themeKey(dark)}", 0) else null
+    fun setPickedColor(c: Context, dark: Boolean, color: Int) {
+        sp(c).edit().putInt("picked_${themeKey(dark)}", color).apply()
     }
-
+    /** Torna al colore di base (nero / bianco) e cancella anche i vecchi colori automatici. */
     fun resetColors(c: Context) {
         val e = sp(c).edit()
-        for (k in listOf("dark", "light")) { e.remove("color_lock_$k"); e.remove("color_cand_$k"); e.remove("color_count_$k") }
+        for (k in listOf("dark", "light")) { e.remove("picked_$k"); e.remove("color_lock_$k"); e.remove("color_cand_$k"); e.remove("color_count_$k") }
         e.remove("bg_color").apply()
     }
+
+    // ---- richiesta del mirino dalla schermata "Altro"
+    fun requestPicker(c: Context) { sp(c).edit().putLong("picker_request", System.currentTimeMillis()).apply() }
+    fun pickerRequested(c: Context): Boolean =
+        System.currentTimeMillis() - sp(c).getLong("picker_request", 0L) in 0 until 60_000
+    fun clearPickerRequest(c: Context) { sp(c).edit().remove("picker_request").apply() }
 
     fun diagEnabled(c: Context): Boolean = sp(c).getBoolean(KEY_DIAG, false)
 

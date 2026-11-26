@@ -233,3 +233,13 @@ Nota positiva: il riconoscimento delle app recenti su Xiaomi funziona (maschera 
   cerchiarle toccando i numeri fuori dalla griglia (somme di riga a destra, di colonna sotto),
   come promemoria. Tocco di nuovo = toglie il cerchio. Anche queste azioni vanno nella pila di Annulla.
   Il cerchio automatico (somma davvero giusta) compare solo tenendo premuto "vedi errori".
+
+## Versione 1.6 (26/11/2026) — fatto
+- **Colore**: niente più campionamento automatico. In Altro → "🎯 Campiona colore": si apre Instagram (messaggi) con un mirino trascinabile; ✓ legge quel pixel esatto, anteprima, Salva (uno per tema scuro e uno per chiaro). "Torna al colore di base" = nero/bianco.
+- **Esplora anti-lampo**: copertura al tocco della lente, appena compare `explore_action_bar` (non se stai scrivendo o ci sono risultati), memoria "explore" salvata.
+- **App recenti**: maschera anche se avevi lasciato Instagram su Esplora; ora lascia passare i tocchi (resta sul livello accessibilità, l'unico che lo permette).
+- **Notifiche sopra le maschere**: con il permesso "Mostra sopra le altre app" le maschere usano TYPE_APPLICATION_OVERLAY (sotto le notifiche). Da nascoste: alpha 0 + non toccabili. Se il livello app non va (permesso tolto, finestra nascosta) si torna da sole al livello accessibilità. Scheda nella schermata principale con i link alle impostazioni (anche quelle Xiaomi: "Mostra finestre pop-up in background").
+- **🔇 sulla home**: preme il tasto audio del video di Instagram sotto la maschera (mai il volume di sistema). Nel registro diagnosi finiscono le descrizioni trovate, utili se non funziona.
+- **Giochini**: ↶ Annulla, ⟲ Ricomincia, 👁 tieni premuto per vedere gli errori (nascosti di base) in Sumplete, KenKen, Sudoku, Kakuro, Futoshiki, Hitori, Binario. Sumplete: tocchi le somme fuori dalla griglia per cerchiarle tu; il cerchio "vero" (somma giusta) si vede solo con 👁.
+
+Rimandati: buco per la bollina notifiche e per la bollina dei messaggi, tua storia nella barra in alto, difficoltà per 24/Bersaglio, notifica fissa "Solo DM attiva".

@@ -36,6 +36,10 @@ class GamePanel(ctx: Context, theme: GameTheme) : FrameLayout(ctx) {
     private val header = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     private val content = FrameLayout(ctx)
 
+    /** Se impostato, compare il tasto 🔇 (toglie l'audio al video di Instagram sotto la maschera). */
+    var onMute: (() -> Unit)? = null
+        set(v) { field = v; if (started) renderHeader() }
+
     private var listOpen = false
     private var gameIndex = Prefs.sp(ctx).getInt("game_index", 0).coerceIn(0, GameList.all.size - 1)
     private var level = Prefs.sp(ctx).getInt("game_level", 0).coerceIn(0, 2)
@@ -78,6 +82,7 @@ class GamePanel(ctx: Context, theme: GameTheme) : FrameLayout(ctx) {
         val pick = k.button("▾  ${GameList.all[gameIndex].title}", 16f) { listOpen = !listOpen; renderHeader() }
         top.addView(pick, k.lp(0, weight = 1f))
         top.addView(k.button("↻ Nuova", 15f) { newGame() }, k.lp())
+        onMute?.let { m -> top.addView(k.button("🔇", 17f) { m() }, k.lp()) }
         header.addView(top, k.lp(ViewGroup.LayoutParams.MATCH_PARENT, margin = 2))
 
         if (listOpen) {

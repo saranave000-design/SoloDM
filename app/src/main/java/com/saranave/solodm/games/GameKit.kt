@@ -107,6 +107,26 @@ class Kit(val ctx: Context, val t: GameTheme) {
         return col
     }
 
+    /** Barra con ↶ Annulla, ⟲ Ricomincia e 👁 (tieni premuto per vedere gli errori). */
+    @SuppressLint("ClickableViewAccessibility")
+    fun tools(board: Board?, onUndo: () -> Unit, onRestart: () -> Unit): LinearLayout {
+        val row = row()
+        row.addView(button("↶ Annulla", 15f) { onUndo() }, lp(0, dpi(46), 1f, 4))
+        row.addView(button("⟲ Ricomincia", 15f) { onRestart() }, lp(0, dpi(46), 1f, 4))
+        val eye = button("👁", 20f) {}
+        eye.setOnTouchListener { _, ev ->
+            try {
+                when (ev.action) {
+                    MotionEvent.ACTION_DOWN -> { setFilled(eye, true); board?.showErrors = true; board?.invalidate() }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { setFilled(eye, false); board?.showErrors = false; board?.invalidate() }
+                }
+            } catch (_: Throwable) {}
+            true
+        }
+        row.addView(eye, lp(dpi(64), dpi(46), 0f, 4))
+        return row
+    }
+
     /** Disposizione del telefono: 1 2 3 / 4 5 6 / 7 8 9, sotto ⌫. */
     fun numberPad(max: Int, onKey: (String) -> Unit): LinearLayout {
         fun k(n: Int) = if (n <= max) "$n" else ""
@@ -143,6 +163,10 @@ class Board(ctx: Context, private val t: GameTheme, val rows: Int, val cols: Int
     var thickBottom: (Int, Int) -> Boolean = { _, _ -> false }
     var selected: Pair<Int, Int>? = null
     var onTap: (Int, Int) -> Unit = { _, _ -> }
+    /** Errori visibili solo mentre si tiene premuto il tasto 👁. */
+    var showErrors = false
+    /** Tocco sui numeri fuori dalla griglia (Sumplete): isRow = somma di riga a destra. */
+    var onLabelTap: ((isRow: Boolean, index: Int) -> Unit)? = null
     /** Etichette laterali (es. somme di Sumplete). */
     var rightLabels: ((Int) -> Pair<String, Boolean>)? = null
     var bottomLabels: ((Int) -> Pair<String, Boolean>)? = null
@@ -232,7 +256,8 @@ class Board(ctx: Context, private val t: GameTheme, val rows: Int, val cols: Int
 
     private fun drawCell(canvas: Canvas, r: Int, c: Int) {
         val x = ox + c * cell; val y = oy + r * cell
-        val st = style(r, c)
+        val st0 = style(r, c)
+        val st = if (st0 == Style.ERROR && !showErrors) Style.NORMAL else st0
         val isSel = selected?.let { it.first == r && it.second == c } == true
         when {
             st == Style.BLOCK || st == Style.FILLED -> {
@@ -300,6 +325,8 @@ class Board(ctx: Context, private val t: GameTheme, val rows: Int, val cols: Int
             val c = ((e.x - ox) / cell).toInt(); val r = ((e.y - oy) / cell).toInt()
             try {
                 if (e.x >= ox && e.y >= oy && r in 0 until rows && c in 0 until cols) onTap(r, c)
+                else if (e.x >= ox && e.y >= oy && rightLabels != null && c == cols && r in 0 until rows) onLabelTap?.invoke(true, r)
+                else if (e.x >= ox && e.y >= oy && bottomLabels != null && r == rows && c in 0 until cols) onLabelTap?.invoke(false, c)
             } catch (t: Throwable) {
                 com.saranave.solodm.CrashGuard.record(context, "gioco (tocco)", t)
             }

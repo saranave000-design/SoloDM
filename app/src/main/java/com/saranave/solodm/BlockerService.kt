@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.Configuration
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import android.net.Uri
@@ -14,7 +13,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.DisplayMetrics
-import android.view.Display
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -50,6 +48,7 @@ class BlockerService : AccessibilityService() {
 
         private const val MODE_HOME = "home"
         private const val MODE_NOTIF = "notif"
+        private const val MODE_EXPLORE = "explore"
         private const val SYSTEMUI = "com.android.systemui"
 
         private val BLOCKED_ORIGINS = setOf(Screen.FEED, Screen.SEARCH, Screen.REELS_TAB)
@@ -68,7 +67,6 @@ class BlockerService : AccessibilityService() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
-    private val shotExecutor = Executors.newSingleThreadExecutor()
     private lateinit var masks: MaskManager
 
     private var evalScheduled = false
@@ -107,8 +105,6 @@ class BlockerService : AccessibilityService() {
     private var lastOtherAt = 0L
 
     // colore
-    private var sampledThisSession = false
-    private var lastShotAt = 0L
 
     private var lastSignature = ""
     private var lastDiagLine = ""
@@ -124,6 +120,7 @@ class BlockerService : AccessibilityService() {
 
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "paused_until") handler.post { scheduleEval(0) }
+        if (key == "picker_request") handler.post { maybeStartPicker() }
     }
 
     override fun onServiceConnected() {
@@ -133,12 +130,14 @@ class BlockerService : AccessibilityService() {
         CrashGuard.clearAlert(this)
         masks = MaskManager(this)
         masks.setColor(initialColor())
+        masks.onMute = { handler.post { muteVideo() } }
         Prefs.sp(this).registerOnSharedPreferenceChangeListener(prefListener)
         // Prepara in anticipo le finestre della home, invisibili
         val (w, h) = screenSize()
         Prefs.loadMemory(this, MODE_HOME, w, h)?.let { masks.prepare(it) }
         Prefs.loadMemory(this, "resume", w, h)?.let { masks.prepare(it) }
-        diag("servizio avviato")
+        Prefs.loadMemory(this, MODE_EXPLORE, w, h)?.let { masks.prepare(it) }
+        diag("servizio avviato (maschere ${if (masks.appLayerActive()) "sotto le notifiche" else "livello accessibilità"})")
     }
 
     override fun onDestroy() {
@@ -147,6 +146,7 @@ class BlockerService : AccessibilityService() {
             Prefs.sp(this).unregisterOnSharedPreferenceChangeListener(prefListener)
         } catch (_: Exception) {
         }
+        picker?.close()
         if (::masks.isInitialized) masks.destroy()
         super.onDestroy()
     }
@@ -177,6 +177,7 @@ class BlockerService : AccessibilityService() {
                 diag("finestra Instagram: ${event.className}")
             }
             if (event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) onScrolled(event)
+            if (picker == null && Prefs.pickerRequested(this)) maybeStartPicker()
             val structural = event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
             if (Prefs.antiFlash(this) && !Prefs.isPaused(this)) {
                 val now = SystemClock.uptimeMillis()
@@ -185,6 +186,9 @@ class BlockerService : AccessibilityService() {
                 if ((event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED || event.eventType == AccessibilityEvent.TYPE_VIEW_SELECTED) &&
                     event.source?.viewIdResourceName?.endsWith(":id/feed_tab") == true
                 ) coverFeedFromMemory("tocco casetta")
+                if ((event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED || event.eventType == AccessibilityEvent.TYPE_VIEW_SELECTED) &&
+                    event.source?.viewIdResourceName?.endsWith(":id/search_tab") == true
+                ) coverExploreFromMemory("tocco lente")
                 // controllo rapido: dopo un cambio di schermata (e per 1,5 s) a ogni evento, al massimo ogni 30 ms
                 if ((structural || now - lastStructuralAt < 1500 || now - launchAt < 2500) && now - lastQuickAt >= QUICK_THROTTLE_MS) {
                     lastQuickAt = now
@@ -246,7 +250,6 @@ class BlockerService : AccessibilityService() {
 
     private fun onInstagramAppearing(event: AccessibilityEvent) {
         igForeground = true
-        sampledThisSession = false
         val now = SystemClock.uptimeMillis()
         if (now - clickTriggerAt < CLICK_TRIGGER_VALID_MS) {
             // già gestito dal tocco
@@ -342,7 +345,6 @@ class BlockerService : AccessibilityService() {
         }
         if (!igForeground) {
             igForeground = true
-            sampledThisSession = false
         }
 
         if (Prefs.isPaused(this)) {
@@ -390,11 +392,11 @@ class BlockerService : AccessibilityService() {
             }
             lastRecognizedMasks = desired
             if (screen == Screen.FEED) Prefs.saveMemory(this, MODE_HOME, w, h, desired)
+            if (screen == Screen.SEARCH && "esplora" in desired) Prefs.saveMemory(this, MODE_EXPLORE, w, h, desired)
             val key = screen.name + desired.keys.sorted()
             if (key != lastScreenKey) { lastScreenKey = key; lastChangeAt = now }
             if (screen == Screen.FEED) {
                 if (feedStableSince == 0L) feedStableSince = now
-                if (now - feedStableSince > 700) maybeSampleColor(snap)
             } else feedStableSince = 0L
         } else if (holding) {
             handler.postDelayed({ scheduleEval(1) }, 200)
@@ -604,77 +606,70 @@ class BlockerService : AccessibilityService() {
     private fun luminance(c: Int) = (Color.red(c) * 299 + Color.green(c) * 587 + Color.blue(c) * 114) / 1000
 
     /** Il colore va bene solo se è coerente col tema: scuro nel tema scuro, chiaro in quello chiaro. */
-    private fun fitsTheme(c: Int) = if (isDark()) luminance(c) < 90 else luminance(c) > 165
-
-    private fun initialColor(): Int {
-        Prefs.lockedColor(this, isDark())?.let { return it }
-        val saved = Prefs.bgColor(this)
-        return if (saved != null && fitsTheme(saved)) saved else fallbackColor()
-    }
+    /** Colore delle maschere: quello campionato a mano col mirino, altrimenti nero / bianco. */
+    private fun initialColor(): Int = Prefs.pickedColor(this, isDark()) ?: fallbackColor()
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (::masks.isInitialized) {
-            masks.setColor(initialColor())
-            sampledThisSession = false
-        }
+        if (::masks.isInitialized) masks.setColor(initialColor())
     }
 
-    /**
-     * Campiona il colore di sfondo dal bordo sinistro della barra della home (solo a home ferma).
-     * Dopo 3 campioni uguali di fila il colore si blocca e non si ricampiona più.
-     */
-    private fun maybeSampleColor(s: Snapshot) {
-        if (sampledThisSession || Build.VERSION.SDK_INT < 30) return
-        val dark = isDark()
-        Prefs.lockedColor(this, dark)?.let { locked ->
-            sampledThisSession = true
-            if (locked != masks.color) masks.setColor(locked)
-            return
-        }
-        val now = SystemClock.uptimeMillis()
-        if (now - lastShotAt < 10_000) return
-        lastShotAt = now
-        val bar = s.firstOf(IgUi.FEED_BAR_IDS)?.bounds ?: return
-        if (bar.height() < dp(16)) return
-        val ys = (1..4).map { bar.top + bar.height() * it / 5 }
-        val points = ys.map { dp(3) to it } + ys.take(2).map { (s.screenW - dp(3)) to it }
-        try {
-            takeScreenshot(Display.DEFAULT_DISPLAY, shotExecutor, object : TakeScreenshotCallback {
-                override fun onSuccess(result: ScreenshotResult) {
-                    val buffer = result.hardwareBuffer
-                    try {
-                        val hw = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace) ?: return
-                        val bmp = hw.copy(Bitmap.Config.ARGB_8888, false) ?: return
-                        val colors = points.mapNotNull { (x, y) ->
-                            if (x in 0 until bmp.width && y in 0 until bmp.height) bmp.getPixel(x, y) or 0xFF000000.toInt() else null
-                        }
-                        bmp.recycle(); hw.recycle()
-                        val best = colors.groupingBy { it }.eachCount().maxByOrNull { it.value } ?: return
-                        // serve accordo quasi totale (almeno 5 punti su 6)
-                        if (best.value < 5) return
-                        val c = best.key
-                        handler.post {
-                            sampledThisSession = true
-                            if (!fitsTheme(c) || isDark() != dark) {
-                                diag("colore campionato scartato: #%06X (non adatto al tema)".format(c and 0xFFFFFF))
-                                return@post
-                            }
-                            val locked = Prefs.offerColor(this@BlockerService, dark, c)
-                            Prefs.setBgColor(this@BlockerService, c)
-                            if (c != masks.color) masks.setColor(c)
-                            diag("colore campionato: #%06X%s".format(c and 0xFFFFFF, if (locked) " (bloccato)" else ""))
-                        }
-                    } catch (_: Exception) {
-                    } finally {
-                        buffer.close()
-                    }
-                }
+    // ------------------------------------------------------------------ mirino del colore
 
-                override fun onFailure(errorCode: Int) {}
-            })
-        } catch (_: Exception) {
+    private var picker: ColorPicker? = null
+
+    /** Avviato da "Campiona colore" in Altro, appena Instagram è davanti. */
+    private fun maybeStartPicker() {
+        if (picker != null || !Prefs.pickerRequested(this)) return
+        val root = fetchRoot() ?: return
+        if (root.packageName?.toString() != IgUi.PKG) return
+        Prefs.clearPickerRequest(this)
+        val dark = isDark()
+        val p = ColorPicker(this, onSave = { c ->
+            Prefs.setPickedColor(this, dark, c)
+            masks.setColor(c)
+            diag("colore campionato col mirino: #%06X".format(c and 0xFFFFFF))
+        }, onClose = { picker = null })
+        picker = p
+        p.start()
+        diag("mirino del colore aperto")
+    }
+
+    // ------------------------------------------------------------------ audio
+
+    /** 🔇 sulla home: preme il tasto audio del video di Instagram sotto la maschera (mai il volume di sistema). */
+    private fun muteVideo() {
+        val root = fetchRoot()
+        if (root == null || root.packageName?.toString() != IgUi.PKG) return
+        val words = listOf("audio", "suono", "mute", "volume", "sound")
+        val found = ArrayList<AccessibilityNodeInfo>()
+        var video: AccessibilityNodeInfo? = null
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var seen = 0
+        while (queue.isNotEmpty() && seen < 3000) {
+            val n = queue.removeFirst(); seen++
+            if (!n.isVisibleToUser) continue
+            val desc = (n.contentDescription?.toString() ?: "").lowercase()
+            if (desc.isNotEmpty() && words.any { it in desc }) found += n
+            val id = n.viewIdResourceName ?: ""
+            if (video == null && (id.endsWith(":id/video_container") || id.endsWith(":id/carousel_video_media_group") ||
+                    id.endsWith(":id/zoomable_view_container"))) video = n
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
+        // prima un tasto che dice "disattiva" (toglie l'audio), poi uno qualunque, poi il video stesso
+        val target = found.firstOrNull { (it.contentDescription ?: "").toString().lowercase().let { d -> "disattiva" in d || "turn off" in d || d.startsWith("mute") } }
+            ?: found.firstOrNull()
+        val ok = when {
+            target != null -> clickNode(target)
+            video != null -> clickNode(video)
+            else -> false
+        }
+        diag("🔇 audio: ${if (ok) "premuto" else "nessun video trovato"} " +
+            found.joinToString(prefix = "[", postfix = "]") { "\"${it.contentDescription}\"" })
+        try {
+            android.widget.Toast.makeText(this, if (ok) "🔇" else "Nessun video con audio qui", android.widget.Toast.LENGTH_SHORT).show()
+        } catch (_: Throwable) {}
     }
 
     // ------------------------------------------------------------------ anti-lampo
@@ -699,9 +694,44 @@ class BlockerService : AccessibilityService() {
             if (bottom - r.bottom < 100) return
             MaskManager.Mask(Rect(0, r.bottom, w, bottom), MaskManager.Kind.GAME)
         }
+        masks.hideKeys(listOf("esplora"))
         masks.showOne("feed", feed)
         home?.get("tab_reels")?.let { masks.showOne("tab_reels", it) }
         diag("rapido: home coperta ($why)")
+    }
+
+    /** Copre subito Esplora usando la memoria (o i bordi della barra di ricerca). */
+    private fun coverExploreFromMemory(why: String, root: AccessibilityNodeInfo? = null, bar: AccessibilityNodeInfo? = null) {
+        if ("esplora" in masks.visibleKeys()) return
+        val (w, h) = screenSize()
+        val mem = Prefs.loadMemory(this, MODE_EXPLORE, w, h)
+        val m = mem?.get("esplora") ?: run {
+            if (root == null || bar == null) return
+            val r = Rect(); bar.getBoundsInScreen(r)
+            val tab = findVisible(root, "tab_bar")
+            val tr = Rect(); tab?.getBoundsInScreen(tr)
+            val bottom = if (tab != null && tr.top > h / 2) tr.top else h
+            if (bottom - r.bottom < 100) return
+            MaskManager.Mask(Rect(0, r.bottom, w, bottom), MaskManager.Kind.GAME)
+        }
+        masks.hideKeys(listOf("feed"))
+        masks.showOne("esplora", m)
+        mem?.get("tab_reels")?.let { masks.showOne("tab_reels", it) }
+        diag("rapido: Esplora coperta ($why)")
+    }
+
+    /** Su Esplora si può cercare: niente maschera se stai scrivendo o se ci sono risultati. */
+    private fun exploreBrowsing(root: AccessibilityNodeInfo): Boolean {
+        for (id in IgUi.SEARCH_EDIT_IDS) {
+            val e = findVisible(root, id) ?: continue
+            if (e.isFocused) return false
+            val showingHint = Build.VERSION.SDK_INT >= 26 && e.isShowingHintText
+            if (!showingHint && !e.text.isNullOrBlank()) return false
+        }
+        for (id in listOf("row_search_user_container", "row_search_user_info_container", "row_search_user_username")) {
+            if (findVisible(root, id) != null) return false
+        }
+        return true
     }
 
     /**
@@ -716,6 +746,11 @@ class BlockerService : AccessibilityService() {
             coverFeedFromMemory("barra home", root, feedBar)
             return
         }
+        val exploreBar = findVisible(root, "explore_action_bar")
+        if (exploreBar != null && findVisible(root, "action_bar_button_back") == null && exploreBrowsing(root)) {
+            coverExploreFromMemory("barra Esplora", root, exploreBar)
+            return
+        }
         val visible = masks.visibleKeys()
         if ("feed" !in visible && "esplora" !in visible) return
         val notFeed = findVisible(root, "direct_inbox_action_bar") ?: findVisible(root, "row_thread_composer_edittext")
@@ -727,11 +762,11 @@ class BlockerService : AccessibilityService() {
         }
     }
 
-    /** App recenti: copre la parte con i post nella scheda di Instagram, se l'avevi lasciato sulla home. */
+    /** App recenti: copre la parte con i post nella scheda di Instagram, se l'avevi lasciato sulla home o su Esplora. I tocchi passano. */
     private fun updateRecentsMask() {
         val (w, h) = screenSize()
         val resume = Prefs.loadMemory(this, "resume", w, h)
-        val feed = resume?.get("feed")
+        val feed = resume?.get("feed") ?: resume?.get("esplora")
         if (feed == null) { masks.hideKeys(listOf("recents")); return }
         val root = fetchRoot() ?: return
         val labels = try { root.findAccessibilityNodeInfosByText("Instagram") } catch (_: Exception) { emptyList() }
@@ -753,7 +788,7 @@ class BlockerService : AccessibilityService() {
             c.left, (c.top + feed.rect.top * sy).toInt(),
             c.right, (c.top + feed.rect.bottom * sy).toInt().coerceAtMost(c.bottom)
         )
-        if (sx > 0 && rect.height() > 20) masks.showOne("recents", MaskManager.Mask(rect)) else masks.hideKeys(listOf("recents"))
+        if (sx > 0 && rect.height() > 20) masks.showOne("recents", MaskManager.Mask(rect, touchable = false)) else masks.hideKeys(listOf("recents"))
     }
 
     // ------------------------------------------------------------------ azioni
@@ -803,6 +838,7 @@ class BlockerService : AccessibilityService() {
     private fun leftInstagram() {
         if (!igForeground && masks.visibleKeys().all { it == "recents" }) return
         igForeground = false
+        picker?.close()
         if (recentsOpen) masks.hideAllExcept(setOf("recents")) else masks.hideAll()
         viewer = null
         current = Screen.UNKNOWN

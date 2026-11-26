@@ -3,6 +3,8 @@ package com.saranave.solodm
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -94,7 +96,7 @@ class AdvancedActivity : Activity() {
         ui.text(c0, "Anti-lampo", 17f, bold = true)
         ui.text(
             c0,
-            "Copre la home già all'apertura e al tocco della casetta, la scopre appena sei in chat, " +
+            "Copre home ed Esplora già all'apertura e al tocco della casetta o della lente, le scopre appena sei in chat, " +
                 "copre l'anteprima nelle app recenti e alleggerisce il lavoro del telefono. " +
                 "Se noti qualcosa di strano, spegnilo: torna tutto come nella versione 1.4.",
             14f, ui.muted
@@ -106,10 +108,17 @@ class AdvancedActivity : Activity() {
         swAf.setOnCheckedChangeListener { _, on -> Prefs.setAntiFlash(this, on) }
         c0.addView(swAf)
         ui.spacer(c0, 10)
-        ui.text(c0, "Colore delle maschere: viene preso dallo sfondo di Instagram e bloccato quando è sicuro. Se un giorno non combacia più:", 14f, ui.muted)
-        ui.button(c0, "Ricalcola colore", primary = false) {
+        ui.text(
+            c0,
+            "Colore delle maschere: premi \"Campiona colore\", si apre Instagram con un mirino. " +
+                "Trascinalo su un punto di sfondo vuoto e premi ✓: vedi il colore e, se va bene, Salva. " +
+                "Resta salvato per sempre (uno per il tema scuro e uno per il chiaro).",
+            14f, ui.muted
+        )
+        ui.button(c0, "🎯  Campiona colore") { startPicker() }
+        ui.button(c0, "Torna al colore di base", primary = false) {
             Prefs.resetColors(this)
-            Toast.makeText(this, "Ok: lo ricalcolo alle prossime aperture della home", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Ok: maschere nere (o bianche col tema chiaro). Vale dalla prossima apertura.", Toast.LENGTH_LONG).show()
         }
 
         // ---- Diagnosi
@@ -164,6 +173,22 @@ class AdvancedActivity : Activity() {
             holdBtn.text = "Tieni premuto ${Prefs.HOLD_SECONDS} s per la pausa"
             holdBtn.isEnabled = true
             endBtn.visibility = View.GONE
+        }
+    }
+
+    private fun startPicker() {
+        if (Build.VERSION.SDK_INT < 30) {
+            Toast.makeText(this, "Serve Android 11 o più recente", Toast.LENGTH_LONG).show(); return
+        }
+        Prefs.requestPicker(this)
+        val i = try {
+            Intent(Intent.ACTION_VIEW, Uri.parse("instagram://direct-inbox")).setPackage("com.instagram.android")
+        } catch (_: Exception) { null }
+        try {
+            startActivity(i!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: Exception) {
+            val l = packageManager.getLaunchIntentForPackage("com.instagram.android")
+            if (l != null) startActivity(l) else Toast.makeText(this, "Instagram non trovato", Toast.LENGTH_LONG).show()
         }
     }
 
