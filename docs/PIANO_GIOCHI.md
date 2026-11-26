@@ -248,3 +248,9 @@ Rimandati: buco per la bollina notifiche e per la bollina dei messaggi, tua stor
 - Flash: dalla diagnosi, durante il cambio pagina la casetta risultava già selezionata ma la pagina era "sconosciuta" → la maschera veniva tolta. Ora casetta selezionata (senza freccia indietro) = home, coperta con il rettangolo in memoria. La memoria della home si salva solo quando c'è `main_feed_action_bar`.
 - Le coperture rapide di home ed Esplora non si spengono più a vicenda.
 - App recenti: coperta tutta la scheda di Instagram (scelta B di Sara, da valutare: "non so se mi soddisfa").
+
+## 1.7 (26/11/2026) — R · allenamento
+- Nuovo gioco "R · allenamento" portato dal prototipo (artifact): Mix, Cosa stampa?, Completa, Componi la riga, Riordina, Trova il bug; livelli Facile/Medio/Difficile = 1/2/3 del prototipo.
+- Offline: esercizi in `assets/r_esercizi.json` (estratti dal prototipo con node; "Cosa stampa?" = 1058 partite pre-generate dagli stessi schemi, ~30 per schema).
+- Errore → "✗ No, riprova." + tasto "Mostra soluzione"; punteggio ✓/totale · serie salvato.
+- Tendina dei giochi: ora si apre sopra la schermata (non sposta più giù tutto); tocco fuori = chiude.

@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.graphics.drawable.GradientDrawable
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -16,7 +18,7 @@ object GameList {
     val all: List<Game> = listOf(
         Game24, GameTarget, GameEquation, GameMental, GameSequences,
         GameSumplete, GameKenKen, GameSudoku, GameKakuro,
-        GameFutoshiki, GameHitori, GameBinario
+        GameFutoshiki, GameHitori, GameBinario, GameR
     )
 }
 
@@ -40,11 +42,13 @@ class GamePanel(ctx: Context, theme: GameTheme) : FrameLayout(ctx) {
     var onMute: (() -> Unit)? = null
         set(v) { field = v; if (started) renderHeader() }
 
-    private var listOpen = false
+    /** Tendina dei giochi: si apre SOPRA la schermata, senza spostare niente. */
+    private val dropLayer = FrameLayout(ctx).apply { visibility = View.GONE }
     private var gameIndex = Prefs.sp(ctx).getInt("game_index", 0).coerceIn(0, GameList.all.size - 1)
     private var level = Prefs.sp(ctx).getInt("game_level", 0).coerceIn(0, 2)
 
     init {
+        GameR.appCtx = ctx.applicationContext
         scroll.isFillViewport = false
         scroll.isVerticalScrollBarEnabled = false
         col.setPadding(k.dpi(14), k.dpi(10), k.dpi(14), k.dpi(24))
@@ -52,6 +56,40 @@ class GamePanel(ctx: Context, theme: GameTheme) : FrameLayout(ctx) {
         col.addView(content)
         scroll.addView(col)
         addView(scroll, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        addView(dropLayer, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    }
+
+    private fun closeDrop() { dropLayer.visibility = View.GONE; dropLayer.removeAllViews() }
+
+    private fun openDrop(anchor: View) {
+        if (dropLayer.visibility == View.VISIBLE) { closeDrop(); return }
+        dropLayer.removeAllViews()
+        // tocco fuori dalla lista = chiudi
+        dropLayer.addView(View(context).apply { isClickable = true; setOnClickListener { closeDrop() } },
+            LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        val a = IntArray(2); anchor.getLocationInWindow(a)
+        val me = IntArray(2); getLocationInWindow(me)
+        val top = (a[1] - me[1] + anchor.height + k.dpi(2)).coerceAtLeast(0)
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(k.dpi(4), k.dpi(4), k.dpi(4), k.dpi(4)) }
+        for ((i, g) in GameList.all.withIndex()) {
+            list.addView(k.button(g.title, 15f, filled = i == gameIndex) {
+                closeDrop()
+                if (i != gameIndex) { gameIndex = i; save(); renderHeader(); newGame() }
+            }, k.lp(ViewGroup.LayoutParams.MATCH_PARENT, margin = 2))
+        }
+        val box = ScrollView(context).apply {
+            isVerticalScrollBarEnabled = true
+            background = GradientDrawable().apply { cornerRadius = k.dp(10f); setColor(k.t.bg); setStroke(k.dpi(1).coerceAtLeast(1), k.t.fg) }
+            elevation = k.dp(8f)
+            addView(list)
+        }
+        val maxH = (height - top - k.dpi(8)).coerceAtLeast(k.dpi(160))
+        list.measure(MeasureSpec.makeMeasureSpec(anchor.width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+        val h = minOf(list.measuredHeight, maxH)
+        dropLayer.addView(box, LayoutParams(anchor.width.coerceAtLeast(k.dpi(200)), h).apply {
+            topMargin = top; leftMargin = (a[0] - me[0]).coerceAtLeast(0)
+        })
+        dropLayer.visibility = View.VISIBLE
     }
 
     /** Da chiamare quando la maschera diventa visibile: crea la prima partita solo allora. */
@@ -79,20 +117,12 @@ class GamePanel(ctx: Context, theme: GameTheme) : FrameLayout(ctx) {
     private fun renderHeader() {
         header.removeAllViews()
         val top = k.row()
-        val pick = k.button("▾  ${GameList.all[gameIndex].title}", 16f) { listOpen = !listOpen; renderHeader() }
+        lateinit var pick: View
+        pick = k.button("▾  ${GameList.all[gameIndex].title}", 16f) { openDrop(pick) }
         top.addView(pick, k.lp(0, weight = 1f))
         top.addView(k.button("↻ Nuova", 15f) { newGame() }, k.lp())
         onMute?.let { m -> top.addView(k.button("🔇", 17f) { m() }, k.lp()) }
         header.addView(top, k.lp(ViewGroup.LayoutParams.MATCH_PARENT, margin = 2))
-
-        if (listOpen) {
-            for ((i, g) in GameList.all.withIndex()) {
-                val b = k.button(g.title, 15f, filled = i == gameIndex) {
-                    gameIndex = i; listOpen = false; save(); renderHeader(); newGame()
-                }
-                header.addView(b, k.lp(ViewGroup.LayoutParams.MATCH_PARENT, margin = 2))
-            }
-        }
 
         val levels = k.row()
         for ((i, name) in listOf("Facile", "Medio", "Difficile").withIndex()) {
