@@ -25,7 +25,8 @@ import com.saranave.solodm.games.GameTheme
  * al livello accessibilità, che copre tutto ma funziona sempre.
  */
 class MaskManager(private val ctx: Context) {
-    enum class Kind { PLAIN, GAME }
+    /** GUARD = finestra trasparente sopra un'icona di Instagram: prende il tocco prima di Instagram. */
+    enum class Kind { PLAIN, GAME, GUARD }
 
     /**
      * touchable = false: la maschera copre ma lascia passare i tocchi (schermata app recenti).
@@ -50,6 +51,9 @@ class MaskManager(private val ctx: Context) {
     var color: Int = 0xFF000000.toInt()
         private set
 
+    /** Tocco su una finestra GUARD: (chiave, azione MotionEvent). */
+    var onGuard: ((String, Int) -> Unit)? = null
+
     /** Tasto 🔇 sul pannello della home. */
     var onMute: (() -> Unit)? = null
 
@@ -61,7 +65,7 @@ class MaskManager(private val ctx: Context) {
         color = c
         val theme = GameTheme.forBackground(c)
         for (s in slots.values) {
-            s.root.setBackgroundColor(c)
+            if (s.kind != Kind.GUARD) s.root.setBackgroundColor(c)
             s.panel?.setTheme(theme)
         }
     }
@@ -73,13 +77,14 @@ class MaskManager(private val ctx: Context) {
         try { Settings.canDrawOverlays(ctx) } catch (_: Throwable) { false }
 
     private fun wantedType(m: Mask): Int =
-        if (m.touchable && !appLayerBroken && canUseAppLayer()) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        if (m.kind != Kind.GUARD && m.touchable && !appLayerBroken && canUseAppLayer()) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
 
     /** Mostra esattamente le maschere indicate; le altre diventano invisibili. */
     fun apply(desired: Map<String, Mask>) {
-        for ((key, s) in slots) if (key !in desired && s.shown) hide(s)
+        // prima si accendono le nuove, poi si spengono le vecchie: mai un istante scoperto
         for ((key, m) in desired) showOne(key, m)
+        for ((key, s) in slots) if (key !in desired && s.shown) hide(s)
     }
 
     /** Crea in anticipo (invisibili) le finestre che serviranno, così poi basta accenderle. */
@@ -148,7 +153,13 @@ class MaskManager(private val ctx: Context) {
 
     private fun tryCreate(key: String, m: Mask, visible: Boolean, type: Int): Slot? {
         val root = FrameLayout(ctx)
-        root.setBackgroundColor(color)
+        if (m.kind == Kind.GUARD) {
+            root.setBackgroundColor(0)
+            root.setOnTouchListener { _, ev ->
+                try { onGuard?.invoke(key, ev.actionMasked) } catch (t: Throwable) { CrashGuard.record(ctx, "tocco icona", t) }
+                true
+            }
+        } else root.setBackgroundColor(color)
         root.isClickable = m.touchable
         var panel: GamePanel? = null
         if (m.kind == Kind.GAME) {
@@ -157,6 +168,7 @@ class MaskManager(private val ctx: Context) {
             root.addView(panel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         }
         val lp = baseParams(m.rect, type, m.touchable)
+        if (m.kind == Kind.GUARD) lp.format = PixelFormat.TRANSLUCENT
         if (!visible) {
             root.visibility = View.INVISIBLE
             lp.alpha = 0f

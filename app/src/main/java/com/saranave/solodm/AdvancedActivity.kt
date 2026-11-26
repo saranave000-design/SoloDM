@@ -97,8 +97,10 @@ class AdvancedActivity : Activity() {
         ui.text(
             c0,
             "Copre home ed Esplora già all'apertura e al tocco della casetta o della lente, le scopre appena sei in chat, " +
-                "copre l'anteprima nelle app recenti e alleggerisce il lavoro del telefono. " +
-                "Se noti qualcosa di strano, spegnilo: torna tutto come nella versione 1.4.",
+                "e alleggerisce il lavoro del telefono. Il tocco su casetta e lente passa prima da Solo DM: " +
+                "così la maschera è già al suo posto quando la pagina compare. " +
+                "Se noti qualcosa di strano, spegnilo: torna tutto come nella versione 1.4.\n\n" +
+                "App recenti: su Xiaomi usa Impostazioni → Schermata Home → Sfoca anteprime app e attivala per Instagram.",
             14f, ui.muted
         )
         val swAf = Switch(this)

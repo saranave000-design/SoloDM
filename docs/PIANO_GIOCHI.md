@@ -254,3 +254,12 @@ Rimandati: buco per la bollina notifiche e per la bollina dei messaggi, tua stor
 - Offline: esercizi in `assets/r_esercizi.json` (estratti dal prototipo con node; "Cosa stampa?" = 1058 partite pre-generate dagli stessi schemi, ~30 per schema).
 - Errore → "✗ No, riprova." + tasto "Mostra soluzione"; punteggio ✓/totale · serie salvato.
 - Tendina dei giochi: ora si apre sopra la schermata (non sposta più giù tutto); tocco fuori = chiude.
+
+## 1.8 (26/11/2026) — flash e leggerezza
+- Diagnosi: il tocco su `feed_tab`/`search_tab` non arriva come evento → la maschera partiva solo a pagina disegnata.
+- Finestre trasparenti (Kind.GUARD, livello accessibilità) sopra casetta e lente: al tocco accendono la maschera, poi premono l'icona vera (ACTION_CLICK). Se l'icona non c'è più, le finestre si tolgono.
+- Le maschere nuove si accendono prima di spegnere le vecchie (mai un istante scoperto). Restano due giochi separati per home ed Esplora.
+- "Indietro" verso home/Esplora: freccia indietro → copertura immediata; gesto di sistema → controllo rapido sempre attivo finché home/Esplora possono ricomparire (`returnBase`).
+- Tolta la maschera delle app recenti: si usa la funzione Xiaomi "Sfoca anteprime app".
+- Lettura completa meno frequente a pagina ferma (700 ms invece di 450).
+- R · allenamento: "Trova il bug" sostituito da "Teoria" (97 domande a 3 risposte, dall'artifact aggiornato).

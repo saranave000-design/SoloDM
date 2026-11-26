@@ -21,7 +21,7 @@ import org.json.JSONObject
 import kotlin.random.Random
 
 /**
- * "R · allenamento": porta nell'app il prototipo (5 giochi, 3 livelli, tutti gli esercizi).
+ * "R · allenamento": porta nell'app il prototipo (5 giochi, 3 livelli, tutti gli esercizi; "Trova il bug" sostituito dalle domande di teoria).
  * Funziona offline: gli esercizi stanno in assets/r_esercizi.json
  * ("Cosa stampa?" = 1058 partite già generate dagli stessi schemi del prototipo).
  * Solo tocchi, niente tastiera. Errore → "✗ No, riprova." e la soluzione solo col tasto.
@@ -33,12 +33,13 @@ object GameR : Game {
 
     private class Out(val lvl: Int, val g: Int, val code: String, val opts: List<String>, val why: String)
     private class Fill(val lvl: Int, val mod: String, val goal: String, val code: String, val opts: List<String>, val why: String)
-    private class Bug(val lvl: Int, val mod: String, val goal: String, val lines: List<String>, val bug: Int, val fix: String, val why: String)
     private class OLine(val t: String, val dep: List<Int>)
     private class Ord(val lvl: Int, val mod: String, val goal: String, val lines: List<OLine>, val distr: String?)
     private class Comp(val lvl: Int, val mod: String, val goal: String, val tok: List<String>, val distr: List<String>, val alt: List<String>, val why: String)
 
-    private class Bank(val ctx: String, val out: List<Out>, val fill: List<Fill>, val bug: List<Bug>, val ord: List<Ord>, val comp: List<Comp>)
+    private class Teo(val lvl: Int, val mod: String, val q: String, val opts: List<String>, val why: String)
+
+    private class Bank(val ctx: String, val out: List<Out>, val fill: List<Fill>, val ord: List<Ord>, val comp: List<Comp>, val teo: List<Teo>)
 
     @Volatile private var bank: Bank? = null
 
@@ -54,7 +55,6 @@ object GameR : Game {
             j.getString("ctx"),
             arr("out").map { Out(it.getInt("lvl"), it.getInt("g"), it.getString("code"), strs(it.getJSONArray("opts")), it.getString("why")) },
             arr("fill").map { Fill(it.getInt("lvl"), it.getString("mod"), it.getString("goal"), it.getString("code"), strs(it.getJSONArray("opts")), it.getString("why")) },
-            arr("bug").map { Bug(it.getInt("lvl"), it.getString("mod"), it.getString("goal"), strs(it.getJSONArray("lines")), it.getInt("bug"), it.getString("fix"), it.getString("why")) },
             arr("order").map { o ->
                 val ls = o.getJSONArray("lines")
                 Ord(o.getInt("lvl"), o.getString("mod"), o.getString("goal"),
@@ -62,7 +62,8 @@ object GameR : Game {
                     if (o.isNull("distr")) null else o.getString("distr"))
             },
             arr("comp").map { Comp(it.getInt("lvl"), it.getString("mod"), it.getString("goal"), strs(it.getJSONArray("tok")),
-                strs(it.getJSONArray("distr")), strs(it.getJSONArray("alt")), it.getString("why")) }
+                strs(it.getJSONArray("distr")), strs(it.getJSONArray("alt")), it.getString("why")) },
+            arr("teo").map { Teo(it.getInt("lvl"), it.getString("mod"), it.getString("q"), strs(it.getJSONArray("opts")), it.getString("why")) }
         )
         bank = b
         return b
@@ -90,7 +91,7 @@ object GameR : Game {
         .replace(" ]", "]").replace(" ,", ",").replace(" $", "$")
     private fun norm(s: String) = s.replace(Regex("\\s+"), "")
 
-    private val MODES = listOf("mix" to "Mix", "out" to "Cosa stampa?", "fill" to "Completa", "comp" to "Componi", "order" to "Riordina", "bug" to "Trova il bug")
+    private val MODES = listOf("mix" to "Mix", "out" to "Cosa stampa?", "fill" to "Completa", "comp" to "Componi", "order" to "Riordina", "teo" to "Teoria")
 
     // ------------------------------------------------------------------ schermata
 
@@ -106,14 +107,14 @@ object GameR : Game {
         val score = k.text("", 13f, bold = true, color = k.t.dim).apply { typeface = Typeface.MONOSPACE; gravity = Gravity.START }
         val modeBox = LinearLayout(k.ctx).apply { orientation = LinearLayout.VERTICAL }
         val card = LinearLayout(k.ctx).apply { orientation = LinearLayout.VERTICAL }
-        var mode = sp.getString("r_mode", "mix") ?: "mix"
+        var mode = (sp.getString("r_mode", "mix") ?: "mix").let { if (it == "bug") "teo" else it }
 
         init {
             root.addView(score, full())
             root.addView(modeBox, full())
             root.addView(card, full())
             val n = b.out.map { it.lvl * 100 + it.g }.toSet().size
-            root.addView(note("\"Cosa stampa?\": ${b.out.size} partite da $n schemi. Poi: ${b.fill.size} da completare, ${b.comp.size} righe da comporre, ${b.ord.size} script da riordinare, ${b.bug.size} bug."), full())
+            root.addView(note("\"Cosa stampa?\": ${b.out.size} partite da $n schemi. Poi: ${b.fill.size} da completare, ${b.comp.size} righe da comporre, ${b.ord.size} script da riordinare, ${b.teo.size} domande di teoria."), full())
             drawScore(); drawModes(); next()
         }
 
@@ -129,8 +130,8 @@ object GameR : Game {
         }
 
         /** Pulsante con testo a sinistra in carattere "da codice". */
-        fun opt(s: String, chip: Boolean = false, onClick: () -> Unit) = TextView(k.ctx).apply {
-            text = s; typeface = Typeface.MONOSPACE; setTextColor(k.t.fg); setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        fun opt(s: String, chip: Boolean = false, mono: Boolean = true, onClick: () -> Unit) = TextView(k.ctx).apply {
+            text = s; typeface = if (mono) Typeface.MONOSPACE else Typeface.DEFAULT; setTextColor(k.t.fg); setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             gravity = if (chip) Gravity.CENTER else Gravity.CENTER_VERTICAL or Gravity.START
             minHeight = k.dpi(if (chip) 42 else 46)
             setPadding(k.dpi(10), k.dpi(8), k.dpi(10), k.dpi(8))
@@ -171,9 +172,9 @@ object GameR : Game {
         fun next() {
             card.removeAllViews()
             msg.removeAllViews()
-            val m = if (mode == "mix") listOf("out", "fill", "comp", "comp", "order", "bug", "bug").random() else mode
+            val m = if (mode == "mix") listOf("out", "fill", "comp", "comp", "order", "teo", "teo").random() else mode
             when (m) {
-                "out" -> playOut(); "fill" -> playFill(); "comp" -> playComp(); "order" -> playOrd(); else -> playBug()
+                "out" -> playOut(); "fill" -> playFill(); "comp" -> playComp(); "order" -> playOrd(); else -> playTeo()
             }
             // torna in cima al pannello
             var p = root.parent
@@ -209,21 +210,21 @@ object GameR : Game {
         }
 
         // ---------- scelta multipla (Cosa stampa? e Completa)
-        fun mcq(tag: String, q: String, code: CharSequence, opts: List<String>, why: String, after: CharSequence?) {
+        fun mcq(tag: String, q: String, code: CharSequence?, opts: List<String>, why: String, after: CharSequence?, mono: Boolean = true) {
             head(tag, q)
-            val codeV = codeBox(code)
-            card.addView(codeV, full())
+            val codeV = code?.let { codeBox(it) }
+            if (codeV != null) card.addView(codeV, full())
             val btns = ArrayList<Pair<Int, TextView>>()
             var tried = false; var done = false
             fun end(good: Boolean?) {
                 done = true
                 for ((i, v) in btns) { v.isEnabled = false; if (i == 0) setOk(v) else if (v.alpha == 1f && v.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG == 0) setDim(v) }
-                if (after != null) codeV.text = after
+                if (after != null && codeV != null) codeV.text = after
                 showFb(good, why, null)
             }
             for (i in opts.indices.shuffled()) {
                 lateinit var v: TextView
-                v = opt(opts[i]) {
+                v = opt(opts[i], mono = mono) {
                     if (done) return@opt
                     if (i == 0) { if (!tried) mark(true); end(if (tried) null else true); return@opt }
                     setNo(v); v.isEnabled = false
@@ -258,30 +259,10 @@ object GameR : Game {
             mcq("Completa · ${f.mod}", f.goal, blank, f.opts.map { if (it.isEmpty()) "(niente)" else it }, f.why, filled)
         }
 
-        // ---------- Trova il bug
-        fun playBug() {
-            val bg = draw(b.bug.filter { it.lvl == lvl }, "bug$lvl")
-            head("Trova il bug · ${bg.mod}", "Obiettivo: ${bg.goal}. Tocca la riga sbagliata.")
-            val btns = ArrayList<TextView>()
-            var tried = false; var done = false
-            fun end(good: Boolean?) {
-                done = true
-                btns.forEachIndexed { i, v -> v.isEnabled = false; if (i == bg.bug) setOk(v) }
-                showFb(good, bg.why, bg.fix)
-            }
-            bg.lines.forEachIndexed { i, l ->
-                lateinit var v: TextView
-                v = opt(l) {
-                    if (done) return@opt
-                    if (i == bg.bug) { if (!tried) mark(true); end(if (tried) null else true); return@opt }
-                    setNo(v); v.isEnabled = false
-                    if (!tried) { mark(false); tried = true }
-                    retry { end(false) }
-                }
-                btns += v
-                card.addView(v, full())
-            }
-            card.addView(msg, full())
+        // ---------- Domande di teoria (3 risposte, la prima nei dati è quella giusta)
+        fun playTeo() {
+            val t = draw(b.teo.filter { it.lvl == lvl }, "teo$lvl")
+            mcq("Teoria · ${t.mod}", t.q, null, t.opts, t.why, null, mono = false)
         }
 
         // ---------- Riordina le righe

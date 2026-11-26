@@ -36,7 +36,7 @@ class BlockerService : AccessibilityService() {
             private set
 
         private const val EVAL_FAST_MS = 60L
-        private const val EVAL_SLOW_MS = 450L
+        private const val EVAL_SLOW_MS = 700L
         private const val STABLE_AFTER_MS = 1200L
         private const val RESUME_VALID_MS = 20 * 60_000L
         private const val KICK_COOLDOWN_MS = 700L
@@ -53,10 +53,6 @@ class BlockerService : AccessibilityService() {
 
         private val BLOCKED_ORIGINS = setOf(Screen.FEED, Screen.SEARCH, Screen.REELS_TAB)
 
-        private val LAUNCHERS = setOf(
-            "com.miui.home", "com.mi.android.globallauncher", "com.android.launcher3",
-            "com.google.android.apps.nexuslauncher", "com.android.systemui"
-        )
         private const val QUICK_THROTTLE_MS = 30L
     }
 
@@ -79,8 +75,8 @@ class BlockerService : AccessibilityService() {
     private var capturePending = false
     private var lastQuickAt = 0L
     private var lastStructuralAt = 0L
-    private var recentsOpen = false
-    private var lastRecentsAt = 0L
+    /** Pagina (home o Esplora) su cui si torna con "indietro": serve per coprirla subito al ritorno. */
+    private var returnBase: Screen? = null
     private var feedStableSince = 0L
 
     private var sheetOpen = false
@@ -131,6 +127,7 @@ class BlockerService : AccessibilityService() {
         masks = MaskManager(this)
         masks.setColor(initialColor())
         masks.onMute = { handler.post { muteVideo() } }
+        masks.onGuard = { key, action -> onGuardTouch(key, action) }
         Prefs.sp(this).registerOnSharedPreferenceChangeListener(prefListener)
         // Prepara in anticipo le finestre della home, invisibili
         val (w, h) = screenSize()
@@ -189,8 +186,18 @@ class BlockerService : AccessibilityService() {
                 if ((event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED || event.eventType == AccessibilityEvent.TYPE_VIEW_SELECTED) &&
                     event.source?.viewIdResourceName?.endsWith(":id/search_tab") == true
                 ) coverExploreFromMemory("tocco lente")
-                // controllo rapido: dopo un cambio di schermata (e per 1,5 s) a ogni evento, al massimo ogni 30 ms
-                if ((structural || now - lastStructuralAt < 1500 || now - launchAt < 2500) && now - lastQuickAt >= QUICK_THROTTLE_MS) {
+                // freccia indietro mentre sei "sopra" la home o Esplora: copri prima che ricompaiano
+                if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED &&
+                    event.source?.viewIdResourceName?.endsWith(":id/action_bar_button_back") == true
+                ) when (returnBase) {
+                    Screen.FEED -> coverFeedFromMemory("freccia indietro")
+                    Screen.SEARCH -> coverExploreFromMemory("freccia indietro")
+                    else -> {}
+                }
+                // controllo rapido: dopo un cambio di schermata (e per 1,5 s) a ogni evento, al massimo ogni 30 ms;
+                // sempre, se home o Esplora possono ricomparire con un "indietro"
+                val armed = returnBase != null && current != Screen.FEED && current != Screen.SEARCH
+                if ((structural || armed || now - lastStructuralAt < 1500 || now - launchAt < 2500) && now - lastQuickAt >= QUICK_THROTTLE_MS) {
                     lastQuickAt = now
                     quickCheck()
                 }
@@ -210,16 +217,6 @@ class BlockerService : AccessibilityService() {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null && pkg != packageName) {
             lastOtherPkg = pkg
             lastOtherAt = SystemClock.uptimeMillis()
-            if (pkg in LAUNCHERS) {
-                val wasOpen = recentsOpen
-                recentsOpen = event.className?.toString()?.contains("recent", ignoreCase = true) == true
-                if (recentsOpen != wasOpen) diag("app recenti ${if (recentsOpen) "aperte" else "chiuse"} (${event.className})")
-            } else recentsOpen = false
-            if (!recentsOpen) masks.hideKeys(listOf("recents"))
-        }
-        if (recentsOpen && pkg in LAUNCHERS && Prefs.antiFlash(this)) {
-            val now = SystemClock.uptimeMillis()
-            if (now - lastRecentsAt >= QUICK_THROTTLE_MS) { lastRecentsAt = now; updateRecentsMask() }
         }
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
             event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED
@@ -368,6 +365,12 @@ class BlockerService : AccessibilityService() {
 
         trackBase(screen, now)
         current = screen
+        when (snap.selectedTab()) {
+            IgUi.TAB_FEED -> returnBase = Screen.FEED
+            IgUi.TAB_SEARCH -> returnBase = Screen.SEARCH
+            null -> {}
+            else -> returnBase = null
+        }
 
         var action = ""
         when (screen) {
@@ -564,6 +567,12 @@ class BlockerService : AccessibilityService() {
 
         s.tabs[IgUi.TAB_REELS]?.let { t ->
             out["tab_reels"] = MaskManager.Mask(Rect(t.bounds))
+        }
+        // Anti-lampo: finestre trasparenti sopra casetta e lente. Prendono il tocco,
+        // accendono la maschera e solo dopo premono l'icona vera di Instagram.
+        if (Prefs.antiFlash(this) && screen != Screen.CLIPS_VIEWER && screen != Screen.STORY_VIEWER) {
+            s.tabs[IgUi.TAB_FEED]?.let { t -> if (t.bounds.width() > 0) out["guard_feed"] = MaskManager.Mask(Rect(t.bounds), MaskManager.Kind.GUARD) }
+            s.tabs[IgUi.TAB_SEARCH]?.let { t -> if (t.bounds.width() > 0) out["guard_search"] = MaskManager.Mask(Rect(t.bounds), MaskManager.Kind.GUARD) }
         }
 
         when (screen) {
@@ -764,29 +773,28 @@ class BlockerService : AccessibilityService() {
         }
     }
 
-    /** App recenti: copre la parte con i post nella scheda di Instagram, se l'avevi lasciato sulla home o su Esplora: tutta la scheda. I tocchi passano. */
-    private fun updateRecentsMask() {
-        val (w, h) = screenSize()
-        val resume = Prefs.loadMemory(this, "resume", w, h)
-        val feed = resume?.get("feed") ?: resume?.get("esplora")
-        if (feed == null) { masks.hideKeys(listOf("recents")); return }
-        val root = fetchRoot() ?: return
-        val labels = try { root.findAccessibilityNodeInfosByText("Instagram") } catch (_: Exception) { emptyList() }
-        var card: Rect? = null
-        for (lab in labels) {
-            var n: AccessibilityNodeInfo? = lab
-            var depth = 0
-            while (n != null && depth < 8) {
-                val r = Rect(); n.getBoundsInScreen(r)
-                if (r.height() in (h * 0.25f).toInt()..(h * 0.95f).toInt() && r.width() < w * 0.97f && r.width() > w * 0.2f) { card = r; break }
-                n = n.parent; depth++
+    // ------------------------------------------------------------------ tocco su casetta / lente
+
+    private fun onGuardTouch(key: String, action: Int) {
+        val feed = key == "guard_feed"
+        when (action) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                if (Prefs.antiFlash(this) && !Prefs.isPaused(this)) {
+                    if (feed) coverFeedFromMemory("tocco casetta") else coverExploreFromMemory("tocco lente")
+                }
             }
-            if (card != null) break
+            android.view.MotionEvent.ACTION_UP -> {
+                val root = fetchRoot()
+                val tab = if (root != null && root.packageName?.toString() == IgUi.PKG) findVisible(root, if (feed) "feed_tab" else "search_tab") else null
+                if (tab == null || !clickNode(tab)) {
+                    // l'icona non c'è più (es. si è aperta una chat): via le finestre trasparenti
+                    masks.hideKeys(listOf("guard_feed", "guard_search"))
+                    diag("tocco icona: ${if (feed) "casetta" else "lente"} non trovata")
+                }
+                scheduleEval(EVAL_FAST_MS)
+            }
+            android.view.MotionEvent.ACTION_CANCEL -> scheduleEval(EVAL_FAST_MS)
         }
-        val c = card ?: run { masks.hideKeys(listOf("recents")); return }
-        // tutta la scheda di Instagram (scelta di Sara): se resta un po' indietro mentre scorri, si nota meno
-        if (c.width() > 20 && c.height() > 20) masks.showOne("recents", MaskManager.Mask(Rect(c), touchable = false))
-        else masks.hideKeys(listOf("recents"))
     }
 
     // ------------------------------------------------------------------ azioni
@@ -834,10 +842,11 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun leftInstagram() {
-        if (!igForeground && masks.visibleKeys().all { it == "recents" }) return
+        if (!igForeground && masks.visibleKeys().isEmpty()) return
         igForeground = false
         picker?.close()
-        if (recentsOpen) masks.hideAllExcept(setOf("recents")) else masks.hideAll()
+        masks.hideAll()
+        returnBase = null
         viewer = null
         current = Screen.UNKNOWN
         feedStableSince = 0L
