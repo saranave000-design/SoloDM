@@ -14,10 +14,11 @@ object GameSumplete : Game {
         val p = data as SumpleteP
         val n = p.n
         // 0 = da decidere, 1 = tolto (X), 2 = tenuto (cerchio)
-        val state = Array(n) { IntArray(n) }
+        val state = k.state("celle") { Array(n) { IntArray(n) } }
         // somme cerchiate a mano (promemoria): righe e colonne
-        val rowMark = BooleanArray(n); val colMark = BooleanArray(n)
-        val undo = ArrayList<() -> Unit>()
+        val rowMark = k.state("righe") { BooleanArray(n) }; val colMark = k.state("colonne") { BooleanArray(n) }
+        // mosse per Annulla: [tipo, r, c, valore prima] (tipo 0 = casella, 1 = somma di riga, 2 = di colonna)
+        val undo = k.state("annulla") { ArrayList<IntArray>() }
         var done = false
         val col = k.column()
         col.addView(k.text("Togli i numeri (X) finché ogni riga e colonna\ndà la somma indicata. Tocca di nuovo per cerchiare.\nTocca una somma fuori dalla griglia per cerchiarla.", 13f, color = k.t.dim), k.lp())
@@ -32,7 +33,7 @@ object GameSumplete : Game {
         board.onTap = { r, c ->
             if (!done) {
                 val old = state[r][c]
-                undo += { state[r][c] = old }
+                undo += intArrayOf(0, r, c, old)
                 state[r][c] = (old + 1) % 3
                 if (Sumplete.solved(p, crossed())) { done = true; msg.text = "✓ Risolto!"; onWin() }
                 board.invalidate()
@@ -41,7 +42,7 @@ object GameSumplete : Game {
         board.onLabelTap = { isRow, i ->
             if (!done) {
                 val arr = if (isRow) rowMark else colMark
-                undo += { arr[i] = !arr[i] }
+                undo += intArrayOf(if (isRow) 1 else 2, i, 0, 0)
                 arr[i] = !arr[i]
                 board.invalidate()
             }
@@ -49,7 +50,11 @@ object GameSumplete : Game {
         col.addView(board, k.lp(ViewGroup.LayoutParams.MATCH_PARENT))
         col.addView(msg, k.lp())
         col.addView(k.tools(board, onUndo = {
-            if (!done && undo.isNotEmpty()) { undo.removeAt(undo.size - 1)(); board.invalidate() }
+            if (!done && undo.isNotEmpty()) {
+                val m = undo.removeAt(undo.size - 1)
+                when (m[0]) { 0 -> state[m[1]][m[2]] = m[3]; 1 -> rowMark[m[1]] = !rowMark[m[1]]; else -> colMark[m[1]] = !colMark[m[1]] }
+                board.invalidate()
+            }
         }, onRestart = {
             for (r in 0 until n) java.util.Arrays.fill(state[r], 0)
             java.util.Arrays.fill(rowMark, false); java.util.Arrays.fill(colMark, false)
@@ -76,8 +81,8 @@ internal fun numberGrid(
     col.addView(k.text(hint, 13f, color = k.t.dim), k.lp())
     val msg = k.text("", 15f)
     var done = false
-    val initial = Array(values.size) { values[it].clone() }
-    val undo = ArrayList<Triple<Int, Int, Int>>()
+    val initial = k.state("iniziale") { Array(values.size) { values[it].clone() } }
+    val undo = k.state("annulla") { ArrayList<Triple<Int, Int, Int>>() }
     board.onTap = { r, c ->
         if (!done && editable(r, c)) { board.selected = r to c; board.invalidate() }
     }
@@ -114,7 +119,7 @@ object GameKenKen : Game {
     override fun build(k: Kit, data: Any, level: Int, onWin: () -> Unit): View {
         val p = data as KenKenP
         val n = p.n
-        val g = Array(n) { IntArray(n) }
+        val g = k.state("valori") { Array(n) { IntArray(n) } }
         val board = Board(k.ctx, k.t, n, n)
         val firstCell = p.cages.map { cg -> cg.cells.minWith(compareBy({ it.first }, { it.second })) }
         board.text = { r, c -> if (g[r][c] == 0) "" else "${g[r][c]}" }
@@ -143,7 +148,7 @@ object GameSudoku : Game {
     override fun build(k: Kit, data: Any, level: Int, onWin: () -> Unit): View {
         val p = data as SudokuP
         val n = p.n
-        val g = Array(n) { p.givens[it].clone() }
+        val g = k.state("valori") { Array(n) { p.givens[it].clone() } }
         val board = Board(k.ctx, k.t, n, n)
         board.maxCellDp = if (n == 9) 40f else 56f
         board.text = { r, c -> if (g[r][c] == 0) "" else "${g[r][c]}" }
@@ -169,7 +174,7 @@ object GameKakuro : Game {
 
     override fun build(k: Kit, data: Any, level: Int, onWin: () -> Unit): View {
         val p = data as KakuroP
-        val g = Array(p.size) { IntArray(p.size) }
+        val g = k.state("valori") { Array(p.size) { IntArray(p.size) } }
         val board = Board(k.ctx, k.t, p.size, p.size)
         board.maxCellDp = 52f
         board.text = { r, c -> if (p.white[r][c] && g[r][c] != 0) "${g[r][c]}" else "" }

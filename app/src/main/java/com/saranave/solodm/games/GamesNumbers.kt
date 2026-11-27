@@ -1,6 +1,5 @@
 package com.saranave.solodm.games
 
-import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -9,7 +8,7 @@ import kotlin.random.Random
 
 // ------------------------------------------------------------------ 24 e Numero bersaglio
 
-private class CardsData(val nums: List<Int>, val target: Int, val solution: String)
+private class CardsData(val nums: List<Int>, val target: Int, val solution: String) : java.io.Serializable
 
 /** Gioco a carte: tocchi un numero, un'operazione, un altro numero → si fondono. */
 private abstract class CardsGame : Game {
@@ -17,7 +16,7 @@ private abstract class CardsGame : Game {
     abstract val rule: String
     abstract fun won(values: List<Frac>, target: Int): Boolean
 
-    private class Card(val v: Frac, val expr: String)
+    private class Card(val v: Frac, val expr: String) : java.io.Serializable
 
     override fun build(k: Kit, data: Any, level: Int, onWin: () -> Unit): View {
         val d = data as CardsData
@@ -29,8 +28,8 @@ private abstract class CardsGame : Game {
         col.addView(cardsBox, k.lp(ViewGroup.LayoutParams.MATCH_PARENT))
         val msg = k.text("", 14f, color = k.t.dim)
 
-        var cards = d.nums.map { Card(Frac.of(it.toLong()), "$it") }.toMutableList()
-        val history = ArrayList<List<Card>>()
+        val cardsB = k.state("carte") { Box<MutableList<Card>>(ArrayList(d.nums.map { Card(Frac.of(it.toLong()), "$it") })) }
+        val history = k.state("storia") { ArrayList<List<Card>>() }
         var sel = -1
         var op: Char? = null
         var done = false
@@ -42,24 +41,25 @@ private abstract class CardsGame : Game {
             if (sel < 0 || sel == i) { sel = if (sel == i) -1 else i; op = null; render(); return }
             val o = op
             if (o == null) { sel = i; render(); return }
-            val a = cards[sel]; val b = cards[i]
+            val a = cardsB.v[sel]; val b = cardsB.v[i]
             val r = applyOp(a.v, o, b.v)
             if (r == null) { msg.text = "Non si divide per zero"; return }
             if (intOnly && (!r.isInt || r.n <= 0)) { msg.text = "Qui valgono solo numeri interi positivi"; return }
-            history += cards.toList()
+            history += ArrayList(cardsB.v)
             val nc = Card(r, "(${a.expr} $o ${b.expr})")
-            cards = cards.filterIndexed { idx, _ -> idx != sel && idx != i }.toMutableList()
-            cards.add(minOf(i, sel).coerceAtMost(cards.size), nc)
-            sel = cards.indexOf(nc); op = null; msg.text = ""
-            if (won(cards.map { it.v }, d.target)) { done = true; msg.text = "✓ Fatto!"; onWin() }
+            val nl = cardsB.v.filterIndexed { idx, _ -> idx != sel && idx != i }.toMutableList()
+            nl.add(minOf(i, sel).coerceAtMost(nl.size), nc)
+            cardsB.v = ArrayList(nl)
+            sel = nl.indexOf(nc); op = null; msg.text = ""
+            if (won(cardsB.v.map { it.v }, d.target)) { done = true; msg.text = "✓ Fatto!"; onWin() }
             render()
         }
         render = {
             cardsBox.removeAllViews()
-            for (chunk in cards.indices.chunked(3)) {
+            for (chunk in cardsB.v.indices.chunked(3)) {
                 val row = k.row()
                 for (i in chunk) {
-                    val b = k.button(cards[i].v.toString(), 24f, filled = i == sel) { tapCard(i) }
+                    val b = k.button(cardsB.v[i].v.toString(), 24f, filled = i == sel) { tapCard(i) }
                     row.addView(b, k.lp(0, k.dpi(64), 1f, 5))
                 }
                 cardsBox.addView(row, k.lp(ViewGroup.LayoutParams.MATCH_PARENT, margin = 0))
@@ -82,10 +82,10 @@ private abstract class CardsGame : Game {
 
         val tools = k.row()
         tools.addView(k.button("Annulla", 14f) {
-            if (history.isNotEmpty() && !done) { cards = history.removeAt(history.size - 1).toMutableList(); sel = -1; op = null; render() }
+            if (history.isNotEmpty() && !done) { cardsB.v = ArrayList(history.removeAt(history.size - 1)); sel = -1; op = null; render() }
         }, k.lp(0, weight = 1f))
         tools.addView(k.button("Da capo", 14f) {
-            if (history.isNotEmpty()) { cards = history.first().toMutableList(); history.clear(); sel = -1; op = null; done = false; msg.text = ""; render() }
+            if (history.isNotEmpty()) { cardsB.v = ArrayList(history.first()); history.clear(); sel = -1; op = null; done = false; msg.text = ""; render() }
         }, k.lp(0, weight = 1f))
         tools.addView(k.button("Soluzione", 14f) { msg.text = "${d.solution} = ${d.target}" }, k.lp(0, weight = 1f))
         col.addView(tools, k.lp(ViewGroup.LayoutParams.MATCH_PARENT))
@@ -137,10 +137,10 @@ object GameEquation : Game {
     override fun build(k: Kit, data: Any, level: Int, onWin: () -> Unit): View {
         val answer = data as String
         val len = answer.length
-        val guesses = ArrayList<String>()
-        val marks = ArrayList<IntArray>()
-        var cur = ""
-        var done = false
+        val guesses = k.state("tentativi") { ArrayList<String>() }
+        val marks = k.state("segni") { ArrayList<IntArray>() }
+        val curB = k.state("scritto") { Box("") }
+        var done = guesses.size >= TRIES || marks.any { m -> m.all { it == 2 } }
 
         val col = k.column()
         col.addView(k.text("Indovina il calcolo in $TRIES tentativi", 13f, color = k.t.dim), k.lp())
@@ -150,7 +150,7 @@ object GameEquation : Game {
         board.text = { r, c ->
             val s = when {
                 r < guesses.size -> guesses[r]
-                r == guesses.size -> cur
+                r == guesses.size -> curB.v
                 else -> ""
             }
             if (c < s.length) "${show(s[c])}" else ""
@@ -174,20 +174,20 @@ object GameEquation : Game {
         ) { key ->
             if (done) return@keypad
             when (key) {
-                "⌫" -> cur = cur.dropLast(1)
+                "⌫" -> curB.v = curB.v.dropLast(1)
                 "Invio" -> {
                     when {
-                        cur.length < len -> msg.text = "Servono $len caratteri"
-                        !Equation.isValid(cur, len) -> msg.text = "Non è un calcolo giusto"
+                        curB.v.length < len -> msg.text = "Servono $len caratteri"
+                        !Equation.isValid(curB.v, len) -> msg.text = "Non è un calcolo giusto"
                         else -> {
-                            val fb = Equation.feedback(cur, answer)
-                            guesses += cur; marks += fb; cur = ""; msg.text = ""
+                            val fb = Equation.feedback(curB.v, answer)
+                            guesses += curB.v; marks += fb; curB.v = ""; msg.text = ""
                             if (fb.all { it == 2 }) { done = true; msg.text = "✓ Trovata!"; onWin() }
-                            else if (guesses.size == TRIES) { done = true; msg.text = "Era: " + answer.map { show(it) }.joinToString("") }
+                            else if (guesses.size == TRIES) { done = true; msg.text = "Era: " + answer.map { show(it) }.joinToString(""); onWin() }
                         }
                     }
                 }
-                else -> if (cur.length < len) cur += when (key) { "×" -> "*"; "÷" -> "/"; "−" -> "-"; else -> key }
+                else -> if (curB.v.length < len) curB.v += when (key) { "×" -> "*"; "÷" -> "/"; "−" -> "-"; else -> key }
             }
             board.invalidate()
         }
@@ -208,31 +208,34 @@ private fun quizView(
     val input = k.text("", 30f)
     val msg = k.text("", 14f, color = k.t.dim)
     col.addView(counter, k.lp()); col.addView(q, k.lp()); col.addView(input, k.lp()); col.addView(msg, k.lp())
-    var i = 0; var cur = ""; var right = 0
-    val start = SystemClock.uptimeMillis()
+    // [domanda, giuste] e il testo scritto: salvati, così la partita riprende dov'era
+    val prog = k.state("quiz") { IntArray(2) }
+    val curB = k.state("scritto") { Box("") }
+    val startB = k.state("inizio") { Box(System.currentTimeMillis()) }
+
     fun render() {
-        if (i >= total) {
-            val secs = (SystemClock.uptimeMillis() - start) / 1000
-            counter.text = ""; q.text = "$right / $total"
+        if (prog[0] >= total) {
+            val secs = (System.currentTimeMillis() - startB.v) / 1000
+            counter.text = ""; q.text = "${prog[1]} / $total"
             input.text = if (timed) "in $secs s" else ""
             return
         }
-        counter.text = "${i + 1} / $total"
-        q.text = prompt(i)
-        input.text = if (cur.isEmpty()) "_" else cur
+        counter.text = "${prog[0] + 1} / $total"
+        q.text = prompt(prog[0])
+        input.text = if (curB.v.isEmpty()) "_" else curB.v
     }
     val pad = k.phonePad("OK") { key ->
-        if (i >= total) return@phonePad
+        if (prog[0] >= total) return@phonePad
         when (key) {
-            "⌫" -> cur = cur.dropLast(1)
+            "⌫" -> curB.v = curB.v.dropLast(1)
             "OK" -> {
-                if (cur.isEmpty()) return@phonePad
-                val a = answer(i)
-                if (cur.toLongOrNull() == a) { right++; msg.text = "✓" } else msg.text = "✗ era $a"
-                cur = ""; i++
-                if (i >= total && right == total) onWin()
+                if (curB.v.isEmpty()) return@phonePad
+                val a = answer(prog[0])
+                if (curB.v.toLongOrNull() == a) { prog[1]++; msg.text = "✓" } else msg.text = "✗ era $a"
+                curB.v = ""; prog[0]++
+                if (prog[0] >= total) onWin()
             }
-            else -> if (cur.length < 7) cur += key
+            else -> if (curB.v.length < 7) curB.v += key
         }
         render()
     }

@@ -16,6 +16,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import kotlin.math.min
 
+/** Contenitore salvabile per un valore che cambia (es. il testo che stai scrivendo). */
+class Box<T>(var v: T) : java.io.Serializable
+
 /** Solo bianco e nero: fg = colore del testo/linee, bg = sfondo. */
 class GameTheme(val bg: Int, val fg: Int) {
     val dim: Int = blend(fg, bg, 0.45f)
@@ -37,6 +40,15 @@ class GameTheme(val bg: Int, val fg: Int) {
 
 /** Contesto che ogni gioco riceve per costruire la sua schermata. */
 class Kit(val ctx: Context, val t: GameTheme) {
+    /**
+     * Stato della partita in corso (mosse, valori inseriti…): resta salvato per ogni gioco e livello.
+     * I giochi prendono qui i loro dati modificabili con state(), così il pannello può salvarli.
+     */
+    var session: HashMap<String, Any> = HashMap()
+
+    @Suppress("UNCHECKED_CAST")
+    fun <T : Any> state(key: String, init: () -> T): T = session.getOrPut(key, init) as T
+
     fun dp(v: Float) = v * ctx.resources.displayMetrics.density
     fun dpi(v: Int) = (v * ctx.resources.displayMetrics.density).toInt()
 

@@ -269,3 +269,12 @@ Rimandati: buco per la bollina notifiche e per la bollina dei messaggi, tua stor
 - Uscita verso home del telefono / recenti con home o Esplora coperte: copertura di tutto lo schermo per 0,5 s (animazione della scheda).
 - Rientro verso home/Esplora: tutto coperto finché la pagina non è riconosciuta (max 1,5 s).
 - Scheda nelle recenti: Sara usa lo sfocamento Xiaomi, funziona.
+
+## 1.9 (27/11/2026) — una maschera sola, copertura di base, leggerezza
+- Home ed Esplora = una sola maschera (chiave `contenuto`) e un solo gioco: cambia solo forma (memorie vecchie feed/esplora convertite).
+- Copertura di base: su pagina sconosciuta la maschera resta (max 1,5 s, poi si libera: es. fotocamera); si toglie su chat, profilo, ricerca mentre scrivi, viewer permessi.
+- Pulsanti trasparenti su casetta, lente (accendono, tengono la maschera fino a 1 s finché la pagina non compare), messaggi e profilo (tolgono subito). Rettangoli tagliati sull'icona vicina (prima la lente copriva anche il profilo).
+- Apertura da notifica: niente maschera sul contenuto né pulsanti trasparenti (si va dritti in chat).
+- Leggerezza: ogni domanda di accessibilità la esegue Instagram stesso → controllo rapido ogni 120 ms (era 30), solo per 0,8 s dopo un cambio, meno ID cercati; lettura completa a pagina ferma ogni 1,2 s.
+- 🔇: Solo DM prende l'audio focus (AUDIOFOCUS_GAIN, uso media) → Instagram smette di suonare; rilasciato all'uscita. Nessun cambio del volume di sistema.
+- Giochi: partite salvate per ogni gioco e livello (memoria + file in `partite/`, salvataggio 0,6 s dopo ogni tocco); si riparte da zero solo con ↻ Nuova o a partita finita.

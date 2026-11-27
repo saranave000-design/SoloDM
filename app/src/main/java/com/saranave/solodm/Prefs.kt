@@ -49,7 +49,9 @@ object Prefs {
             val n = f[2].split(',').mapNotNull { it.toIntOrNull() }
             if (n.size != 4) continue
             val kind = try { MaskManager.Kind.valueOf(f[1]) } catch (_: Exception) { MaskManager.Kind.PLAIN }
-            out[f[0]] = MaskManager.Mask(android.graphics.Rect(n[0], n[1], n[2], n[3]), kind)
+            // dalla 1.9 home ed Esplora hanno una maschera sola
+            val key = if (f[0] == "feed" || f[0] == "esplora") BlockerService.KEY else f[0]
+            out[key] = MaskManager.Mask(android.graphics.Rect(n[0], n[1], n[2], n[3]), kind)
         }
         return out
     }

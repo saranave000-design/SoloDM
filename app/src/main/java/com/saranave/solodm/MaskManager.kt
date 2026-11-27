@@ -124,6 +124,13 @@ class MaskManager(private val ctx: Context) {
 
     fun visibleKeys(): Set<String> = slots.filterValues { it.shown }.keys
 
+    /** La maschera [key] così com'è adesso, se è accesa. */
+    fun current(key: String): Mask? {
+        val s = slots[key] ?: return null
+        if (!s.shown) return null
+        return Mask(Rect(s.lp.x, s.lp.y, s.lp.x + s.lp.width, s.lp.y + s.lp.height), s.kind, s.touchable)
+    }
+
     fun destroy() {
         main.removeCallbacksAndMessages(null)
         for (s in slots.values) try { wm.removeView(s.root) } catch (_: Exception) {}
@@ -164,7 +171,7 @@ class MaskManager(private val ctx: Context) {
         var panel: GamePanel? = null
         if (m.kind == Kind.GAME) {
             panel = GamePanel(ctx, GameTheme.forBackground(color))
-            if (key == "feed") panel.onMute = { onMute?.invoke() }
+            if (key == BlockerService.KEY) panel.onMute = { onMute?.invoke() }
             root.addView(panel, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         }
         val lp = baseParams(m.rect, type, m.touchable)

@@ -11,7 +11,7 @@ object GameFutoshiki : Game {
     override fun build(k: Kit, data: Any, level: Int, onWin: () -> Unit): View {
         val p = data as FutoshikiP
         val n = p.n
-        val g = Array(n) { p.givens[it].clone() }
+        val g = k.state("valori") { Array(n) { p.givens[it].clone() } }
         val board = Board(k.ctx, k.t, n, n)
         board.maxCellDp = 56f
         board.text = { r, c -> if (g[r][c] == 0) "" else "${g[r][c]}" }
@@ -28,7 +28,7 @@ object GameFutoshiki : Game {
         col.addView(k.text("Numeri da 1 a $n, mai ripetuti in riga o colonna.\nRispetta i segni < > tra le caselle (∧ ∨ in verticale).", 13f, color = k.t.dim), k.lp())
         val msg = k.text("", 15f)
         var done = false
-        val undo = ArrayList<Triple<Int, Int, Int>>()
+        val undo = k.state("annulla") { ArrayList<Triple<Int, Int, Int>>() }
         board.onTap = { r, c -> if (!done && p.givens[r][c] == 0) { board.selected = r to c; board.invalidate() } }
         col.addView(board, k.lp(ViewGroup.LayoutParams.MATCH_PARENT))
         col.addView(msg, k.lp())
@@ -63,7 +63,7 @@ object GameHitori : Game {
         val p = data as HitoriP
         val n = p.n
         // 0 = normale, 1 = annerita, 2 = cerchiata (sicuramente bianca)
-        val st = Array(n) { IntArray(n) }
+        val st = k.state("celle") { Array(n) { IntArray(n) } }
         var done = false
         val board = Board(k.ctx, k.t, n, n)
         board.maxCellDp = 56f
@@ -77,7 +77,7 @@ object GameHitori : Game {
                 else -> Board.Style.NORMAL
             }
         }
-        val undo = ArrayList<Triple<Int, Int, Int>>()
+        val undo = k.state("annulla") { ArrayList<Triple<Int, Int, Int>>() }
         val col = k.column()
         col.addView(k.text("Annerisci i numeri ripetuti: in ogni riga e colonna\nnessun numero bianco doppio. Le caselle nere non si toccano\ne le bianche restano tutte collegate. Tocca: nero → cerchio → vuoto.", 13f, color = k.t.dim), k.lp())
         val msg = k.text("", 15f)
@@ -109,7 +109,7 @@ object GameBinario : Game {
     override fun build(k: Kit, data: Any, level: Int, onWin: () -> Unit): View {
         val p = data as BinarioP
         val n = p.n
-        val g = Array(n) { p.givens[it].clone() }
+        val g = k.state("valori") { Array(n) { p.givens[it].clone() } }
         var done = false
         val board = Board(k.ctx, k.t, n, n)
         board.maxCellDp = 46f
@@ -124,7 +124,7 @@ object GameBinario : Game {
         val col = k.column()
         col.addView(k.text("Riempi con 0 e 1: mai tre uguali di fila, tanti 0 quanti 1\nin ogni riga e colonna, nessuna riga o colonna uguale a un'altra.\nTocca: 0 → 1 → vuoto.", 13f, color = k.t.dim), k.lp())
         val msg = k.text("", 15f)
-        val undo = ArrayList<Triple<Int, Int, Int>>()
+        val undo = k.state("annulla") { ArrayList<Triple<Int, Int, Int>>() }
         board.onTap = { r, c ->
             if (!done && p.givens[r][c] < 0) {
                 undo += Triple(r, c, g[r][c])

@@ -11,7 +11,7 @@ import kotlin.random.Random
 
 // ------------------------------------------------------------------ frazioni esatte
 
-class Frac private constructor(val n: Long, val d: Long) {
+class Frac private constructor(val n: Long, val d: Long) : java.io.Serializable {
     companion object {
         fun of(n: Long, d: Long = 1L): Frac {
             require(d != 0L)
@@ -200,7 +200,7 @@ object Equation {
 
 // ------------------------------------------------------------------ Sumplete
 
-class SumpleteP(val n: Int, val grid: Array<IntArray>, val rowSums: IntArray, val colSums: IntArray)
+class SumpleteP(val n: Int, val grid: Array<IntArray>, val rowSums: IntArray, val colSums: IntArray) : java.io.Serializable
 
 object Sumplete {
     /** level 0..2 → 5×5, 6×6, 7×7; più il livello è alto, più giri di ragionamento servono. */
@@ -248,11 +248,11 @@ object Sumplete {
 
 // ------------------------------------------------------------------ KenKen
 
-class Cage(val cells: List<Pair<Int, Int>>, val op: Char, val target: Int) {
+class Cage(val cells: List<Pair<Int, Int>>, val op: Char, val target: Int) : java.io.Serializable {
     val label get() = if (op == '=') "$target" else "$target$op"
 }
 
-class KenKenP(val n: Int, val cages: List<Cage>, val solution: Array<IntArray>) {
+class KenKenP(val n: Int, val cages: List<Cage>, val solution: Array<IntArray>) : java.io.Serializable {
     val cageOf = Array(n) { IntArray(n) }.also { a -> cages.forEachIndexed { i, cg -> cg.cells.forEach { (r, c) -> a[r][c] = i } } }
 }
 
@@ -373,7 +373,7 @@ object Grids {
 
 // ------------------------------------------------------------------ Sudoku
 
-class SudokuP(val n: Int, val boxR: Int, val boxC: Int, val givens: Array<IntArray>)
+class SudokuP(val n: Int, val boxR: Int, val boxC: Int, val givens: Array<IntArray>) : java.io.Serializable
 
 object Sudoku {
     fun generate(level: Int, rnd: Random): SudokuP {
@@ -462,7 +462,7 @@ class KakuroP(
     val across: Array<IntArray>, // indizio della corsa verso destra che parte da (r,c+1); 0 = nessuno
     val down: Array<IntArray>,   // indizio della corsa verso il basso
     val solution: Array<IntArray>
-)
+) : java.io.Serializable
 
 object Kakuro {
     /**

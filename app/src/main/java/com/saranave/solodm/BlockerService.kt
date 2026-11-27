@@ -36,7 +36,7 @@ class BlockerService : AccessibilityService() {
             private set
 
         private const val EVAL_FAST_MS = 60L
-        private const val EVAL_SLOW_MS = 700L
+        private const val EVAL_SLOW_MS = 1200L
         private const val STABLE_AFTER_MS = 1200L
         private const val RESUME_VALID_MS = 20 * 60_000L
         private const val KICK_COOLDOWN_MS = 700L
@@ -53,7 +53,11 @@ class BlockerService : AccessibilityService() {
 
         private val BLOCKED_ORIGINS = setOf(Screen.FEED, Screen.SEARCH, Screen.REELS_TAB)
 
-        private const val QUICK_THROTTLE_MS = 30L
+        /** Home ed Esplora: un'unica maschera (e un unico gioco) che cambia solo forma. */
+        const val KEY = "contenuto"
+        private const val QUICK_THROTTLE_MS = 120L
+        private const val TAP_HOLD_MS = 1000L
+        private const val STICKY_MAX_MS = 1500L
         private const val EXIT_COVER_MS = 500L
         private const val ENTRY_COVER_MAX_MS = 1500L
         private val LAUNCHERS = setOf(
@@ -202,8 +206,7 @@ class BlockerService : AccessibilityService() {
                 }
                 // controllo rapido: dopo un cambio di schermata (e per 1,5 s) a ogni evento, al massimo ogni 30 ms;
                 // sempre, se home o Esplora possono ricomparire con un "indietro"
-                val armed = returnBase != null && current != Screen.FEED && current != Screen.SEARCH
-                if ((structural || armed || now - lastStructuralAt < 1500 || now - launchAt < 2500) && now - lastQuickAt >= QUICK_THROTTLE_MS) {
+                if ((structural || now - lastStructuralAt < 800 || now - launchAt < 2500) && now - lastQuickAt >= QUICK_THROTTLE_MS) {
                     lastQuickAt = now
                     quickCheck()
                 }
@@ -228,7 +231,7 @@ class BlockerService : AccessibilityService() {
             val cls = event.className?.toString() ?: ""
             val toLauncher = pkg in LAUNCHERS || (pkg == SYSTEMUI && cls.contains("recent", ignoreCase = true))
             if (toLauncher && igForeground && Prefs.antiFlash(this) && !Prefs.isPaused(this) &&
-                masks.visibleKeys().any { it == "feed" || it == "esplora" }
+                KEY in masks.visibleKeys()
             ) fullCover(EXIT_COVER_MS, "uscita da Instagram")
         }
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
@@ -282,13 +285,17 @@ class BlockerService : AccessibilityService() {
         val useResume = leftAgo in 0 until RESUME_VALID_MS
         val home = Prefs.loadMemory(this, MODE_HOME, w, h)
         var mem = (if (useResume) Prefs.loadMemory(this, "resume", w, h) else null) ?: home
-        // anti-lampo: la home si copre SEMPRE all'apertura; il controllo rapido la scopre
-        // appena è certo che non sei sul feed
-        val feed = home?.get("feed")
-        if (Prefs.antiFlash(this) && feed != null) mem = (mem ?: emptyMap()) + ("feed" to feed)
+        if (mode == MODE_NOTIF) {
+            // da una notifica Instagram va dritto alla chat: niente maschera sul contenuto
+            mem = mem?.filterKeys { it != KEY && !it.startsWith("guard_") }
+        } else {
+            // anti-lampo: home/Esplora si coprono SEMPRE all'apertura; si scoprono solo a pagina riconosciuta
+            val feed = home?.get(KEY)
+            if (Prefs.antiFlash(this) && feed != null && mem?.containsKey(KEY) != true) mem = (mem ?: emptyMap()) + (KEY to feed)
+        }
         if (mem != null) masks.apply(mem)
         // Rientro (dalle recenti o dall'icona) verso home/Esplora: tutto coperto finché la pagina non è riconosciuta
-        if (Prefs.antiFlash(this) && mem != null && ("feed" in mem || "esplora" in mem)) fullCover(ENTRY_COVER_MAX_MS, "rientro")
+        if (Prefs.antiFlash(this) && mode != MODE_NOTIF && mem != null && KEY in mem) fullCover(ENTRY_COVER_MAX_MS, "rientro")
         diag("apertura $mode ($why): memoria ${if (useResume) "dove l'avevi lasciato" else "home"} " +
             "${mem?.keys?.sorted() ?: "assente"} in ${SystemClock.uptimeMillis() - now} ms")
     }
@@ -398,7 +405,22 @@ class BlockerService : AccessibilityService() {
             else -> viewer = null
         }
 
-        val desired = buildMasks(screen, snap)
+        val desired = HashMap(buildMasks(screen, snap))
+        val shown = masks.current(KEY)
+        if (KEY !in desired && shown != null) {
+            // copertura di base: si scopre solo quando la pagina è riconosciuta come libera
+            // (non oltre 1,5 s su una pagina sconosciuta: es. la fotocamera per pubblicare)
+            val stickyUnknown = screen == Screen.UNKNOWN && unknownSince != 0L && now - unknownSince < STICKY_MAX_MS
+            if (stickyUnknown || now < coverHoldUntil) {
+                desired[KEY] = shown
+                handler.postDelayed({ scheduleEval(1) }, 400)
+            }
+        }
+        if (screen == Screen.FEED || screen == Screen.SEARCH) coverHoldUntil = 0L
+        if (now < uncoverHoldUntil) {
+            if (screen == Screen.FEED || screen == Screen.SEARCH || screen == Screen.UNKNOWN) desired.remove(KEY)
+            else uncoverHoldUntil = 0L
+        }
         val holding = screen == Screen.UNKNOWN &&
             ((!launchRecognized && now - launchAt < LAUNCH_HOLD_MS) || now - lastKnownAt < UNKNOWN_HOLD_MS)
         if (!holding) masks.apply(desired)
@@ -410,7 +432,7 @@ class BlockerService : AccessibilityService() {
             }
             lastRecognizedMasks = desired
             if (screen == Screen.FEED && snap.hasAny(IgUi.FEED_BAR_IDS)) Prefs.saveMemory(this, MODE_HOME, w, h, desired)
-            if (screen == Screen.SEARCH && "esplora" in desired) Prefs.saveMemory(this, MODE_EXPLORE, w, h, desired)
+            if (screen == Screen.SEARCH && KEY in desired) Prefs.saveMemory(this, MODE_EXPLORE, w, h, desired)
             val key = screen.name + desired.keys.sorted()
             if (key != lastScreenKey) { lastScreenKey = key; lastChangeAt = now }
             if (screen == Screen.FEED) {
@@ -576,6 +598,22 @@ class BlockerService : AccessibilityService() {
 
     // ------------------------------------------------------------------ maschere
 
+    /** Rettangoli dei pulsanti trasparenti: uno per icona, tagliati dove toccano l'icona vicina. */
+    private fun guardRects(s: Snapshot): List<Pair<String, Rect>> {
+        val all = s.tabs.values.filter { it.bounds.width() > 0 }.sortedBy { it.bounds.left }
+        val out = ArrayList<Pair<String, Rect>>()
+        for ((i, t) in all.withIndex()) {
+            if (t.key !in GUARDED) continue
+            val r = Rect(t.bounds)
+            if (i > 0) r.left = maxOf(r.left, minOf(all[i - 1].bounds.right, t.bounds.centerX()))
+            if (i + 1 < all.size) r.right = minOf(r.right, maxOf(all[i + 1].bounds.left, t.bounds.centerX()))
+            if (r.width() > 10) out += t.key to r
+        }
+        return out
+    }
+
+    private val GUARDED = setOf(IgUi.TAB_FEED, IgUi.TAB_SEARCH, IgUi.TAB_DIRECT, IgUi.TAB_PROFILE)
+
     private fun buildMasks(screen: Screen, s: Snapshot): Map<String, MaskManager.Mask> {
         val out = HashMap<String, MaskManager.Mask>()
         val tabTop = s.tabBarTop()
@@ -585,18 +623,18 @@ class BlockerService : AccessibilityService() {
         }
         // Anti-lampo: finestre trasparenti sopra casetta e lente. Prendono il tocco,
         // accendono la maschera e solo dopo premono l'icona vera di Instagram.
+        // Messaggi e profilo: il tocco toglie subito la maschera.
         if (Prefs.antiFlash(this) && screen != Screen.CLIPS_VIEWER && screen != Screen.STORY_VIEWER) {
-            s.tabs[IgUi.TAB_FEED]?.let { t -> if (t.bounds.width() > 0) out["guard_feed"] = MaskManager.Mask(Rect(t.bounds), MaskManager.Kind.GUARD) }
-            s.tabs[IgUi.TAB_SEARCH]?.let { t -> if (t.bounds.width() > 0) out["guard_search"] = MaskManager.Mask(Rect(t.bounds), MaskManager.Kind.GUARD) }
+            for ((tab, r) in guardRects(s)) out["guard_$tab"] = MaskManager.Mask(r, MaskManager.Kind.GUARD)
         }
 
         when (screen) {
             Screen.FEED -> {
-                val remembered = if (!s.hasAny(IgUi.FEED_BAR_IDS)) Prefs.loadMemory(this, MODE_HOME, s.screenW, s.screenH)?.get("feed") else null
-                if (remembered != null) out["feed"] = remembered
+                val remembered = if (!s.hasAny(IgUi.FEED_BAR_IDS)) Prefs.loadMemory(this, MODE_HOME, s.screenW, s.screenH)?.get(KEY) else null
+                if (remembered != null) out[KEY] = remembered
                 else {
                     val top = contentTop(s)
-                    if (tabTop - top > 100) out["feed"] = MaskManager.Mask(Rect(0, top, s.screenW, tabTop), MaskManager.Kind.GAME)
+                    if (tabTop - top > 100) out[KEY] = MaskManager.Mask(Rect(0, top, s.screenW, tabTop), MaskManager.Kind.GAME)
                 }
             }
             Screen.SEARCH -> {
@@ -605,7 +643,7 @@ class BlockerService : AccessibilityService() {
                 val showingUsers = s.hasPrefix(IgUi.SEARCH_USER_PREFIXES)
                 if (!typing && !showingUsers) {
                     val top = edit?.bounds?.bottom?.plus(dp(8)) ?: (s.screenH * 0.14f).toInt()
-                    if (tabTop - top > 100) out["esplora"] = MaskManager.Mask(Rect(0, top, s.screenW, tabTop), MaskManager.Kind.GAME)
+                    if (tabTop - top > 100) out[KEY] = MaskManager.Mask(Rect(0, top, s.screenW, tabTop), MaskManager.Kind.GAME)
                 }
             }
             else -> {}
@@ -665,39 +703,37 @@ class BlockerService : AccessibilityService() {
 
     // ------------------------------------------------------------------ audio
 
-    /** 🔇 sulla home: preme il tasto audio del video di Instagram sotto la maschera (mai il volume di sistema). */
+    private var audioFocus: android.media.AudioFocusRequest? = null
+
+    /**
+     * 🔇: Solo DM chiede ad Android l'audio (come una chiamata o un'altra app di musica),
+     * così Instagram smette di suonare. Il volume del telefono non cambia.
+     */
     private fun muteVideo() {
-        val root = fetchRoot()
-        if (root == null || root.packageName?.toString() != IgUi.PKG) return
-        val words = listOf("audio", "suono", "mute", "volume", "sound")
-        val found = ArrayList<AccessibilityNodeInfo>()
-        var video: AccessibilityNodeInfo? = null
-        val queue = ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        var seen = 0
-        while (queue.isNotEmpty() && seen < 3000) {
-            val n = queue.removeFirst(); seen++
-            if (!n.isVisibleToUser) continue
-            val desc = (n.contentDescription?.toString() ?: "").lowercase()
-            if (desc.isNotEmpty() && words.any { it in desc }) found += n
-            val id = n.viewIdResourceName ?: ""
-            if (video == null && (id.endsWith(":id/video_container") || id.endsWith(":id/carousel_video_media_group") ||
-                    id.endsWith(":id/zoomable_view_container"))) video = n
-            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
-        }
-        // prima un tasto che dice "disattiva" (toglie l'audio), poi uno qualunque, poi il video stesso
-        val target = found.firstOrNull { (it.contentDescription ?: "").toString().lowercase().let { d -> "disattiva" in d || "turn off" in d || d.startsWith("mute") } }
-            ?: found.firstOrNull()
-        val ok = when {
-            target != null -> clickNode(target)
-            video != null -> clickNode(video)
-            else -> false
-        }
-        diag("🔇 audio: ${if (ok) "premuto" else "nessun video trovato"} " +
-            found.joinToString(prefix = "[", postfix = "]") { "\"${it.contentDescription}\"" })
-        try {
-            android.widget.Toast.makeText(this, if (ok) "🔇" else "Nessun video con audio qui", android.widget.Toast.LENGTH_SHORT).show()
-        } catch (_: Throwable) {}
+        val ok = try {
+            val am = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+            val req = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener { }
+                .build()
+            audioFocus?.let { am.abandonAudioFocusRequest(it) }
+            val r = am.requestAudioFocus(req)
+            audioFocus = req
+            r == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        } catch (t: Throwable) { CrashGuard.record(this, "audio", t); false }
+        diag("🔇 audio preso: $ok")
+        try { android.widget.Toast.makeText(this, if (ok) "🔇" else "Audio non disponibile", android.widget.Toast.LENGTH_SHORT).show() } catch (_: Throwable) {}
+    }
+
+    private fun releaseAudio() {
+        val f = audioFocus ?: return
+        audioFocus = null
+        try { (getSystemService(AUDIO_SERVICE) as android.media.AudioManager).abandonAudioFocusRequest(f) } catch (_: Throwable) {}
     }
 
     // ------------------------------------------------------------------ anti-lampo
@@ -710,10 +746,9 @@ class BlockerService : AccessibilityService() {
 
     /** Copre subito la home usando la memoria (o i bordi della barra, se la memoria manca). */
     private fun coverFeedFromMemory(why: String, root: AccessibilityNodeInfo? = null, bar: AccessibilityNodeInfo? = null) {
-        if ("feed" in masks.visibleKeys()) return
         val (w, h) = screenSize()
         val home = Prefs.loadMemory(this, MODE_HOME, w, h)
-        val feed = home?.get("feed") ?: run {
+        val feed = home?.get(KEY) ?: run {
             if (root == null || bar == null) return
             val r = Rect(); bar.getBoundsInScreen(r)
             val tab = findVisible(root, "tab_bar")
@@ -722,17 +757,16 @@ class BlockerService : AccessibilityService() {
             if (bottom - r.bottom < 100) return
             MaskManager.Mask(Rect(0, r.bottom, w, bottom), MaskManager.Kind.GAME)
         }
-        masks.showOne("feed", feed)
+        masks.showOne(KEY, feed)
         home?.get("tab_reels")?.let { masks.showOne("tab_reels", it) }
         diag("rapido: home coperta ($why)")
     }
 
     /** Copre subito Esplora usando la memoria (o i bordi della barra di ricerca). */
     private fun coverExploreFromMemory(why: String, root: AccessibilityNodeInfo? = null, bar: AccessibilityNodeInfo? = null) {
-        if ("esplora" in masks.visibleKeys()) return
         val (w, h) = screenSize()
         val mem = Prefs.loadMemory(this, MODE_EXPLORE, w, h)
-        val m = mem?.get("esplora") ?: run {
+        val m = mem?.get(KEY) ?: run {
             if (root == null || bar == null) return
             val r = Rect(); bar.getBoundsInScreen(r)
             val tab = findVisible(root, "tab_bar")
@@ -741,23 +775,19 @@ class BlockerService : AccessibilityService() {
             if (bottom - r.bottom < 100) return
             MaskManager.Mask(Rect(0, r.bottom, w, bottom), MaskManager.Kind.GAME)
         }
-        masks.showOne("esplora", m)
+        masks.showOne(KEY, m)
         mem?.get("tab_reels")?.let { masks.showOne("tab_reels", it) }
         diag("rapido: Esplora coperta ($why)")
     }
 
     /** Su Esplora si può cercare: niente maschera se stai scrivendo o se ci sono risultati. */
     private fun exploreBrowsing(root: AccessibilityNodeInfo): Boolean {
-        for (id in IgUi.SEARCH_EDIT_IDS) {
-            val e = findVisible(root, id) ?: continue
+        val e = findVisible(root, "action_bar_search_edit_text")
+        if (e != null) {
             if (e.isFocused) return false
-            val showingHint = Build.VERSION.SDK_INT >= 26 && e.isShowingHintText
-            if (!showingHint && !e.text.isNullOrBlank()) return false
+            if (!e.isShowingHintText && !e.text.isNullOrBlank()) return false
         }
-        for (id in listOf("row_search_user_container", "row_search_user_info_container", "row_search_user_username")) {
-            if (findVisible(root, id) != null) return false
-        }
-        return true
+        return findVisible(root, "row_search_user_container") == null
     }
 
     /**
@@ -765,26 +795,29 @@ class BlockerService : AccessibilityService() {
      * barra della home visibile → copri subito; chat/profilo visibili → scopri subito.
      */
     private fun quickCheck() {
+        val now = SystemClock.uptimeMillis()
         val root = fetchRoot() ?: return
         if (root.packageName?.toString() != IgUi.PKG) return
+        if (KEY in masks.visibleKeys()) {
+            // coperto: si guarda solo se sei arrivata su chat o profilo (salvo subito dopo casetta/lente)
+            if (now < coverHoldUntil) return
+            val free = findVisible(root, "direct_inbox_action_bar") ?: findVisible(root, "row_thread_composer_edittext")
+                ?: findVisible(root, "profile_header_container")
+            if (free != null) {
+                masks.hideKeys(listOf(KEY))
+                diag("rapido: maschera tolta (${IgUi.entryName(free)})")
+            }
+            return
+        }
+        if (now < uncoverHoldUntil) return
         val feedBar = findVisible(root, "main_feed_action_bar")
-        if (feedBar != null && findVisible(root, "action_bar_button_back") == null) {
-            coverFeedFromMemory("barra home", root, feedBar)
+        if (feedBar != null) {
+            if (findVisible(root, "action_bar_button_back") == null) coverFeedFromMemory("barra home", root, feedBar)
             return
         }
         val exploreBar = findVisible(root, "explore_action_bar")
         if (exploreBar != null && findVisible(root, "action_bar_button_back") == null && exploreBrowsing(root)) {
             coverExploreFromMemory("barra Esplora", root, exploreBar)
-            return
-        }
-        val visible = masks.visibleKeys()
-        if ("feed" !in visible && "esplora" !in visible) return
-        val notFeed = findVisible(root, "direct_inbox_action_bar") ?: findVisible(root, "row_thread_composer_edittext")
-            ?: findVisible(root, "profile_header_container") ?: findVisible(root, "reel_viewer_root")
-            ?: findVisible(root, "clips_viewer_view_pager")
-        if (notFeed != null) {
-            masks.hideKeys(listOf("feed", "esplora"))
-            diag("rapido: maschere tolte (${IgUi.entryName(notFeed)})")
         }
     }
 
@@ -805,25 +838,38 @@ class BlockerService : AccessibilityService() {
 
     // ------------------------------------------------------------------ tocco su casetta / lente
 
+    private var coverHoldUntil = 0L
+    private var uncoverHoldUntil = 0L
+
     private fun onGuardTouch(key: String, action: Int) {
-        val feed = key == "guard_feed"
+        val tab = key.removePrefix("guard_")
+        val now = SystemClock.uptimeMillis()
         when (action) {
             android.view.MotionEvent.ACTION_DOWN -> {
-                if (Prefs.antiFlash(this) && !Prefs.isPaused(this)) {
-                    if (feed) coverFeedFromMemory("tocco casetta") else coverExploreFromMemory("tocco lente")
+                if (!Prefs.antiFlash(this) || Prefs.isPaused(this)) return
+                when (tab) {
+                    IgUi.TAB_FEED -> { uncoverHoldUntil = 0L; coverHoldUntil = now + TAP_HOLD_MS; coverFeedFromMemory("tocco casetta"); scheduleEvalLater(TAP_HOLD_MS + 50) }
+                    IgUi.TAB_SEARCH -> { uncoverHoldUntil = 0L; coverHoldUntil = now + TAP_HOLD_MS; coverExploreFromMemory("tocco lente"); scheduleEvalLater(TAP_HOLD_MS + 50) }
+                    else -> {
+                        coverHoldUntil = 0L; uncoverHoldUntil = now + TAP_HOLD_MS
+                        scheduleEvalLater(TAP_HOLD_MS + 50)
+                        if (KEY in masks.visibleKeys()) { masks.hideKeys(listOf(KEY)); diag("tocco ${if (tab == IgUi.TAB_DIRECT) "messaggi" else "profilo"}: maschera tolta") }
+                    }
                 }
             }
             android.view.MotionEvent.ACTION_UP -> {
                 val root = fetchRoot()
-                val tab = if (root != null && root.packageName?.toString() == IgUi.PKG) findVisible(root, if (feed) "feed_tab" else "search_tab") else null
-                if (tab == null || !clickNode(tab)) {
-                    // l'icona non c'è più (es. si è aperta una chat): via le finestre trasparenti
-                    masks.hideKeys(listOf("guard_feed", "guard_search"))
-                    diag("tocco icona: ${if (feed) "casetta" else "lente"} non trovata")
+                val id = when (tab) { IgUi.TAB_FEED -> "feed_tab"; IgUi.TAB_SEARCH -> "search_tab"; IgUi.TAB_DIRECT -> "direct_tab"; else -> "profile_tab" }
+                val node = if (root != null && root.packageName?.toString() == IgUi.PKG) findVisible(root, id) else null
+                if (node == null || !clickNode(node)) {
+                    // l'icona non c'è più (es. si è aperta una chat): via i pulsanti trasparenti
+                    masks.hideKeys(masks.visibleKeys().filter { it.startsWith("guard_") })
+                    coverHoldUntil = 0L; uncoverHoldUntil = 0L
+                    diag("tocco icona: $id non trovata")
                 }
                 scheduleEval(EVAL_FAST_MS)
             }
-            android.view.MotionEvent.ACTION_CANCEL -> scheduleEval(EVAL_FAST_MS)
+            android.view.MotionEvent.ACTION_CANCEL -> { coverHoldUntil = 0L; uncoverHoldUntil = 0L; scheduleEval(EVAL_FAST_MS) }
         }
     }
 
@@ -875,6 +921,7 @@ class BlockerService : AccessibilityService() {
         if (!igForeground && masks.visibleKeys().isEmpty()) return
         igForeground = false
         picker?.close()
+        releaseAudio()
         if (SystemClock.uptimeMillis() < fullCoverUntil) masks.hideAllExcept(setOf("fullcover")) else masks.hideAll()
         returnBase = null
         viewer = null

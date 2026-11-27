@@ -26,7 +26,7 @@ class FutoshikiP(
     val right: Array<IntArray>,
     val down: Array<IntArray>,
     val solution: Array<IntArray>
-)
+) : java.io.Serializable
 
 object Futoshiki {
     fun generate(level: Int, rnd: Random): FutoshikiP {
@@ -157,7 +157,7 @@ object FutoshikiLogic {
 // ================================================================== HITORI
 
 /** grid = numeri; black = soluzione (caselle da annerire). */
-class HitoriP(val n: Int, val grid: Array<IntArray>, val black: Array<BooleanArray>)
+class HitoriP(val n: Int, val grid: Array<IntArray>, val black: Array<BooleanArray>) : java.io.Serializable
 
 object Hitori {
     /**
@@ -302,7 +302,7 @@ object HitoriLogic {
 // ================================================================== BINARIO
 
 /** givens: -1 vuota, 0 o 1 data. */
-class BinarioP(val n: Int, val givens: Array<IntArray>, val solution: Array<IntArray>)
+class BinarioP(val n: Int, val givens: Array<IntArray>, val solution: Array<IntArray>) : java.io.Serializable
 
 object Binario {
     fun generate(level: Int, rnd: Random): BinarioP {
